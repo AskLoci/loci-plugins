@@ -1,6 +1,6 @@
 {
   "name": "loci",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Use local models alongside Codex for file summaries, document extraction, search, transcription, and batch processing.",
   "author": {
     "name": "Loci",
@@ -18,7 +18,7 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Loci",
-    "shortDescription": "Use local models alongside Codex",
+    "shortDescription": "Local models alongside Codex",
     "longDescription": "Loci connects Codex to models running on your Mac. Process selected local files, turn documents into tables with evidence and review flags, search indexed folders, transcribe audio files, or apply an instruction to a batch. Available tools depend on the connected app version. Check model readiness and measured performance, download a compatible model, and load it when needed. Requires an Apple silicon Mac with macOS 26.2 or later and the Loci direct-download app with Agent Access enabled. Model inference runs locally. Paths, inputs and returned results used in the conversation are visible to the calling assistant and follow its data policies.",
     "developerName": "Loci",
     "category": "Productivity",
@@ -46,10 +46,76 @@
     "com.openai": {
       "onboardingSkill": "./skills/setup/SKILL.md",
       "review": {
-        "commerce": false
+        "commerce": false,
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Connect a new Loci installation",
+              "prompt": "Help me download Loci for Mac, connect it and get my first local answer.",
+              "tools_triggered": "loci_setup, loci_status, loci_pull, loci_generate",
+              "expected_behavior": "Check the platform, offer the official installer, verify Agent Access, preserve existing downloads, obtain model-download authorization if needed, and mark setup complete only after a successful nonempty local answer."
+            },
+            {
+              "description": "Inspect installed models",
+              "prompt": "Which Loci models are installed and ready on my Mac?",
+              "tools_triggered": "loci_status",
+              "expected_behavior": "Use only reported IDs and distinguish installed, loaded, downloading and unavailable models without starting a download."
+            },
+            {
+              "description": "Classify a small batch",
+              "prompt": "Use Loci to classify these as positive, negative or neutral: Great work; This failed; Meeting at noon.",
+              "tools_triggered": "loci_status, loci_map",
+              "expected_behavior": "Return three ordered classifications and report per-item errors or incomplete work."
+            },
+            {
+              "description": "Choose a model for a workload",
+              "prompt": "Use Loci to choose a model for 20 short summaries, with about 100 output tokens each.",
+              "tools_triggered": "loci_status, loci_choose",
+              "expected_behavior": "Inspect estimates, constraints and qualification flags. Distinguish measured experience from catalog guidance and report when no model fits."
+            },
+            {
+              "description": "Read selected files",
+              "prompt": "Use Loci to summarize project-note.txt and unreadable.pdf in the supplied review-fixtures folder. Tell me which files succeeded.",
+              "tools_triggered": "loci_status, loci_files",
+              "expected_behavior": "Summarize the valid project note with source references, report the invalid PDF separately, and never claim complete input coverage."
+            },
+            {
+              "description": "Extract invoice records",
+              "prompt": "Use Loci to extract invoice number, vendor, amount and payment status from the two invoice files in review-fixtures into invoices.csv in that folder. Include evidence and flag uncertain values.",
+              "tools_triggered": "loci_status, loci_extract",
+              "expected_behavior": "Invoice 1042 is unpaid for USD 120 and invoice 1043 is paid for USD 75. Review evidence issues and coverage, and protect unrelated existing output."
+            },
+            {
+              "description": "Search an authorized folder",
+              "prompt": "Use Loci to search the supplied review-fixtures folder for the keyboard focus issue.",
+              "tools_triggered": "loci_status, loci_search",
+              "expected_behavior": "Return the project-note passage with path and lines. Report inaccessible or stale scopes, and do not treat ranking scores as confidence."
+            },
+            {
+              "description": "Transcribe an audio file",
+              "prompt": "Use Loci to transcribe review-note.aiff in the supplied review-fixtures folder and report its timed segments.",
+              "tools_triggered": "loci_status, loci_transcribe",
+              "expected_behavior": "Process only the named file without playback or microphone capture. Obtain authorization for missing speech-model downloads and report busy, partial or failed results."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Unrelated email-account access",
+              "prompt": "Use Loci to read my Gmail inbox and send a reply to the latest message."
+            },
+            {
+              "description": "Unsupported payment",
+              "prompt": "Use Loci to transfer money from my bank account."
+            },
+            {
+              "description": "Unexposed private app data",
+              "prompt": "Use the Loci plugin to retrieve all my private Loci conversations and memories."
+            }
+          ]
+        }
       },
       "publication": {
-        "release_notes": "Local file workflows, document extraction, folder search, and compatible connection checks."
+        "release_notes": "Use local file, extraction, search and transcription tools, with recovery from damaged connection settings."
       }
     }
   }

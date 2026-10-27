@@ -1,0 +1,14 @@
+{
+  "name": "askloci",
+  "owner": {
+    "name": "Loci"
+  },
+  "plugins": [
+    {
+      "name": "loci",
+      "source": "./loci-cursor",
+      "description": "Local models alongside Cursor",
+      "version": "0.1.3"
+    }
+  ]
+}
