@@ -1,0 +1,21 @@
+{
+  "name": "loci",
+  "version": "0.1.3",
+  "description": "Use models on your Mac alongside Claude Code for summaries, classification, file processing and batch work. Tools depend on your Loci app version.",
+  "author": {
+    "name": "Loci",
+    "url": "https://askloci.ai"
+  },
+  "homepage": "https://askloci.ai/agents/",
+  "repository": "https://github.com/AskLoci/loci-plugins",
+  "license": "MIT",
+  "keywords": [
+    "local-models",
+    "mac",
+    "apple-silicon",
+    "mcp",
+    "batch-processing"
+  ],
+  "mcpServers": "./.mcp.json",
+  "icon": "./assets/loci.png"
+}
