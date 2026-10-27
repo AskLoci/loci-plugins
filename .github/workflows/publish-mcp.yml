@@ -1,0 +1,65 @@
+name: Publish to MCP Registry
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mcp-registry-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out distribution metadata
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Verify the public MCP bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e '
+            .name == "io.github.AskLoci/loci" and
+            .repository.url == "https://github.com/AskLoci/loci-plugins" and
+            (.packages | length) == 1 and
+            .packages[0].registryType == "mcpb" and
+            (.packages[0].identifier | startswith("https://github.com/AskLoci/loci-plugins/releases/download/")) and
+            (.packages[0].fileSha256 | test("^[a-f0-9]{64}$"))
+          ' server.json
+          bundle_url="$(jq -er '.packages[0].identifier' server.json)"
+          bundle_sha="$(jq -er '.packages[0].fileSha256' server.json)"
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+            "$bundle_url" --output "$RUNNER_TEMP/loci.mcpb"
+          printf '%s  %s\n' "$bundle_sha" "$RUNNER_TEMP/loci.mcpb" | sha256sum --check --strict
+
+      - name: Install the pinned MCP publisher
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+            'https://github.com/modelcontextprotocol/registry/releases/download/v1.8.6/mcp-publisher_linux_amd64.tar.gz' \
+            --output "$RUNNER_TEMP/mcp-publisher.tar.gz"
+          printf '%s  %s\n' '1fbe93fc0783c2394d8012c8d6e50a59e98cb2cc2d216264cc69f405d0e21340' \
+            "$RUNNER_TEMP/mcp-publisher.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/mcp-publisher.tar.gz" -C "$RUNNER_TEMP" mcp-publisher
+
+      - name: Validate the metadata
+        run: '"$RUNNER_TEMP/mcp-publisher" validate server.json'
+
+      - name: Authenticate as AskLoci and publish
+        shell: bash
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish "$GITHUB_WORKSPACE/server.json"
