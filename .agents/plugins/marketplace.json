@@ -1,0 +1,20 @@
+{
+  "name": "askloci",
+  "interface": {
+    "displayName": "Loci"
+  },
+  "plugins": [
+    {
+      "name": "loci",
+      "source": {
+        "source": "local",
+        "path": "./loci"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

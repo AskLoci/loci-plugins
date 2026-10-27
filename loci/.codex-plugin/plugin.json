@@ -1,0 +1,56 @@
+{
+  "name": "loci",
+  "version": "0.1.2",
+  "description": "Use local models alongside Codex for file summaries, document extraction, search, transcription, and batch processing.",
+  "author": {
+    "name": "Loci",
+    "url": "https://askloci.ai"
+  },
+  "homepage": "https://askloci.ai/agents/",
+  "license": "MIT",
+  "keywords": [
+    "local-models",
+    "mac",
+    "structured-output",
+    "batch-processing"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Loci",
+    "shortDescription": "Use local models alongside Codex",
+    "longDescription": "Loci connects Codex to models running on your Mac. Process selected local files, turn documents into tables with evidence and review flags, search indexed folders, transcribe audio files, or apply an instruction to a batch. Available tools depend on the connected app version. Check model readiness and measured performance, download a compatible model, and load it when needed. Requires an Apple silicon Mac with macOS 26.2 or later and the Loci direct-download app with Agent Access enabled. Model inference runs locally. Paths, inputs and returned results used in the conversation are visible to the calling assistant and follow its data policies.",
+    "developerName": "Loci",
+    "category": "Productivity",
+    "capabilities": [
+      "Local model execution",
+      "Local file processing",
+      "Document extraction",
+      "Folder search",
+      "Audio transcription"
+    ],
+    "websiteURL": "https://askloci.ai/agents/",
+    "supportURL": "https://askloci.ai/support",
+    "privacyPolicyURL": "https://askloci.ai/privacy",
+    "termsOfServiceURL": "https://askloci.ai/terms",
+    "defaultPrompt": [
+      "Help me download Loci for Mac and set it up.",
+      "Check which Loci models are available on my Mac.",
+      "Use Loci to classify these items."
+    ],
+    "composerIcon": "./assets/loci.png",
+    "logo": "./assets/loci.png"
+  },
+  "requires_local_executor": true,
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/setup/SKILL.md",
+      "review": {
+        "commerce": false
+      },
+      "publication": {
+        "release_notes": "Local file workflows, document extraction, folder search, and compatible connection checks."
+      }
+    }
+  }
+}

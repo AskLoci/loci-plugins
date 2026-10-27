@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "loci": {
+      "command": "${PLUGIN_ROOT}/bin/loci-connector",
+      "args": [],
+      "cwd": "${PLUGIN_ROOT}"
+    }
+  }
+}
