@@ -1,6 +1,6 @@
 {
   "name": "loci",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Use local models alongside Codex for file summaries, document extraction, search, transcription, and batch processing.",
   "author": {
     "name": "Loci",
@@ -115,7 +115,7 @@
         }
       },
       "publication": {
-        "release_notes": "Use local file, extraction, search and transcription tools, with recovery from damaged connection settings."
+        "release_notes": "Check the saved app connection before sending credentials, with clear guidance when it is stale."
       }
     }
   }
