@@ -14,6 +14,8 @@ codex plugin marketplace add AskLoci/loci-plugins
 
 In the desktop app, open the Plugins Directory, select **Loci**, and install the **Loci** plugin. If the marketplace does not appear, restart the desktop app. Start a new chat and ask: “Help me set up Loci.”
 
+[Download the Codex plugin (0.1.4)](https://github.com/AskLoci/loci-plugins/releases/download/v0.1.4/loci-0.1.4-macos-arm64.zip).
+
 ## Claude Code
 
 Add the marketplace and install Loci:

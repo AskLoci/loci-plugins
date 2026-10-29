@@ -11,7 +11,9 @@ Guide a new user from plugin installation to their first local answer. Assume th
 
 Call `loci_setup`. This tool works before Loci is installed and returns a connection check and the official download link. A missing connection can also mean the app is closed or Agent Access is off; do not describe it as proof the app is absent.
 
-When not connected, lead with this short path rather than configuration instructions:
+If `next_step` is `check_loci_connection`, follow the returned connection guidance: check that the intended direct-download app is open with Agent Access enabled, then call `loci_setup` again. Do not treat a stale or unverifiable connection as a missing installation, or stop another running Loci session.
+
+Otherwise, when not connected, lead with this short path rather than configuration instructions:
 
 1. [Download Loci for Mac](https://askloci.ai/api/mac-download). If Loci is already installed, open it instead.
 2. Open the downloaded disk image, then open **Install Loci** and follow its prompts. Open the installed Loci app and complete its first-time setup.
@@ -37,6 +39,6 @@ Use `loci_pull` only for the selected and authorized model. Show progress from i
 
 Finish the user's original task, or check the connection with one short synthetic prompt such as “Reply with Ready.” Mark setup complete only after a model returns a successful, nonempty answer. Keep Loci running during use; it can remain in the background.
 
-The connector reads Loci's owner-only connection file on each request and sends its credential only over local loopback. Never print or copy that credential into chat, configuration, commands, logs, or the plugin package.
+The connector reads Loci's owner-only connection file on each request and checks the saved process, owner and loopback listener before sending its credential. Never print or copy that credential into chat, configuration, commands, logs, or the plugin package.
 
 Explain the data boundary when relevant: Loci runs model inference on the Mac, while paths, prompts and returned results shared with Codex remain part of the Codex workflow. Do not promise that a Codex conversation stays entirely on the device. When the connected app advertises file tools, Loci can read authorized paths directly without the assistant first reading their contents. Returned summaries, extracted values, quotes, previews and search passages can still disclose source information. If the user's requirement prohibits that disclosure, do not read those files or invoke tools that return their contents.
