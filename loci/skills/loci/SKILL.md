@@ -11,11 +11,15 @@ Delegate bounded, reviewable work to models on the user's Mac. Loci can process 
 
 Call `loci_status` first. If only `loci_setup` is available or Loci is disconnected, follow [setup](../setup/SKILL.md). Use only tools advertised by the connected app; older apps may expose only status, generate, map, pull and warm. The current direct-download app requires an Apple silicon Mac with macOS 26.2 or later.
 
-Use only reported model IDs. If `ready` is false, retry briefly and stop after three unchanged checks. Prefer `default`, the user's current model; loading another can unload the model used in chat. `loci_status {"installable":true}` requests the full installable list when supported.
+Use only reported model IDs. If `ready` is false, retry briefly and stop after three unchanged checks. Honor an explicitly requested model, including `default`; explain an incompatibility instead of silently substituting.
+
+Otherwise choose a suitable installed model for the task, context and reported resource limits. For a short readiness check, reuse a suitable loaded model. For routine work, compare relevant measured performance, including loading cost, when available. Without comparable measurements, prefer a smaller adequate installed model over cold-loading a large chat default; describe this as a resource-based choice, not a proven speed advantage. Preserve active work: loading another model can unload the one used in chat. Keep the app's default preference unchanged.
+
+Send only arguments in the advertised tool schema. `loci_status {"installable":true}` requests the full catalog only when that option is advertised. On older apps, use the catalog and installed models already returned. If required catalog details are unavailable, help inspect Models in Loci or update the app; a missing option is not a broken connection or proof that no model fits.
 
 `loci_pull` downloads a model using network bandwidth and disk space. Obtain authorization unless the user already requested that download. `loci_warm` loads an installed model. Both accept `wait_seconds` from 0 to 60. Preserve existing downloads, poll while progress continues, and report paused or failed states without looping indefinitely.
 
-Before a large job, use `loci_choose` when available. Supply task, item count, largest decoded input size, expected `output_tokens`, and relevant memory or time limits. Explicit output tokens override historical answer lengths. Inspect `basis`, estimates and flags: a measured choice reflects observed completion and evidence checks within the demonstrated workload, not proof of factual accuracy. Catalog choices have less evidence. Estimates depend on system load; a null choice means no model meets the supplied constraints.
+Use `loci_choose` for installed-model selection when advertised, including routine tasks where model choice matters. Supply task, item count, largest decoded input size, expected `output_tokens`, and relevant memory or time limits using its live schema. Explicit output tokens override historical answer lengths. Inspect `basis`, estimates and flags: a measured choice reflects observed completion and evidence checks within the demonstrated workload, not proof of factual accuracy. Catalog choices have less evidence. Estimates depend on system load; a null choice means no model meets the supplied constraints. This tool does not choose an uninstalled download.
 
 ## Choose a workflow
 
@@ -33,7 +37,7 @@ Keep unfamiliar multi-step code reasoning and consequential decisions on the pri
 
 ## Text and file tasks
 
-`loci_generate` accepts `prompt` or `messages` with system, user and assistant roles. Use `model: "default"` unless another model is needed. Set `max_tokens` to the needed answer length within 1–32768. Optional `task` labels let model selection use observed performance. `loci_map` takes `instruction` and string/object `items`, with optional model, task and schema controls.
+`loci_generate` accepts `prompt` or `messages` with system, user and assistant roles. Pass the selected reported model ID explicitly; preserve an explicit request for `default`. Set `max_tokens` to the needed answer length within 1–32768. Optional `task` labels let model selection use observed performance. `loci_map` takes `instruction` and string/object `items`, with optional model, task and schema controls.
 
 `loci_files` takes `instruction` and absolute file `paths`, not folders or globs. Each file may be at most 16 MiB and the total at most 64 MiB. Supported inputs include UTF-8 text, PDF, Word, RTF, HTML and email decoded as text. Large files split at line boundaries and each part answers independently. Preserve `path`, `lines`, `part` and `parts` when combining results; enable `line_numbers` for citations. A failed part is incomplete even if other parts succeed.
 

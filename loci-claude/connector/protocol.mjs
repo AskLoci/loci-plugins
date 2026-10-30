@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 // Public MCP contract: retain app schemas/results and add setup discovery only.
-export const VERSION = "0.1.7";
+export const VERSION = "0.1.8";
 export const MAX_BYTES = 8 * 1024 * 1024;
 export const META_VERSION = "io.modelcontextprotocol/protocolVersion";
 export const META_CLIENT = "io.modelcontextprotocol/clientInfo";
@@ -24,7 +24,7 @@ export const INCOMPATIBLE_APP =
 export const CONNECTION_FAILED =
   "The connection to Loci could not be completed. Check Agent Access in the intended Loci app, then run loci_setup again.";
 export const INSTRUCTIONS =
-  "Loci runs models on this Mac alongside your assistant. If Loci is not connected, call loci_setup for the Mac download link and connection instructions. After connecting, call loci_status to choose an installed model or a recommended compatible download. Use the tools the connected app advertises. Only use authorized file paths and output destinations. Inputs and results returned to the calling assistant follow that client’s data policies.";
+  "Loci runs models on this Mac alongside your assistant. If Loci is not connected, call loci_setup for the Mac download link and connection instructions. After connecting, call loci_status and choose a model suited to the task. Honor explicit model choices and prefer suitable installed models; recommendation flags are optional. Use only advertised tools and arguments. Preserve active work and the app default; authorize new downloads. Only use authorized file paths and output destinations. Inputs and results returned to the calling assistant follow that client’s data policies.";
 export const CORE_TOOLS = [
   "loci_status",
   "loci_generate",
@@ -206,7 +206,12 @@ export function describeTools(reply) {
   for (const tool of tools) {
     if (!object(tool) || !names.includes(tool.name)) continue;
     const readOnly = ["loci_status", "loci_choose"].includes(tool.name);
-    tool.description = `${typeof tool.description === "string" ? tool.description : tool.name}. Inputs and returned results are visible to the calling assistant and follow its data policies.`;
+    // Earlier apps described local inference as an absolute data boundary.
+    // Correct those known claims while retaining the tool's other contracts.
+    const description = (typeof tool.description === "string" ? tool.description : tool.name)
+      .replaceAll("Nothing leaves the Mac.", "Model inference runs locally.")
+      .replaceAll("Nothing sent here leaves this Mac.", "Model inference runs locally.");
+    tool.description = `${description}. Inputs and returned results are visible to the calling assistant and follow its data policies.`;
     tool.annotations = {
       ...tool.annotations,
       readOnlyHint: readOnly,
@@ -282,6 +287,23 @@ if (
       setupReport({ id: 1 }, false, STALE).result.structuredContent.next_step,
       "check_loci_connection",
     );
+  });
+  test("legacy privacy claims are corrected without losing tool contracts", () => {
+    for (const claim of ["Nothing leaves the Mac.", "Nothing sent here leaves this Mac."]) {
+      const schema = { type: "object", additionalProperties: false };
+      const reply = { result: { tools: [{
+        name: "loci_generate",
+        description: `Retain continuation and schema limits. ${claim}`,
+        inputSchema: schema,
+      }] } };
+      describeTools(reply);
+      const tool = reply.result.tools[0];
+      assert.equal(tool.inputSchema, schema);
+      assert.match(tool.description, /Retain continuation and schema limits/);
+      assert.equal(tool.description.includes(claim), false);
+      assert.match(tool.description, /Model inference runs locally/);
+      assert.match(tool.description, /visible to the calling assistant/);
+    }
   });
   test("schemas, unknown tools and per-tool contracts survive decoration", () => {
     const extra = {
