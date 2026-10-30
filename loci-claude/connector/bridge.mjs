@@ -239,10 +239,29 @@ export class Bridge {
       own(reply, "result") !== own(reply, "error");
     const notification =
       !own(reply, "id") &&
+      !own(reply, "result") &&
+      !own(reply, "error") &&
       typeof reply.method === "string" &&
       (!own(reply, "params") || object(reply.params));
     if (!answer && !notification)
       throw new ConnectorError("Loci sent a response for a different request.");
+    if (answer && own(reply, "result") && !object(reply.result))
+      throw new ConnectorError(INVALID_REPLY);
+    if (answer && own(reply, "result") && message.method === "tools/call") {
+      const value = reply.result;
+      if (
+        !Array.isArray(value.content) ||
+        value.content.some(
+          (item) =>
+            !object(item) ||
+            typeof item.type !== "string" ||
+            (item.type === "text" && typeof item.text !== "string"),
+        ) ||
+        (own(value, "isError") && typeof value.isError !== "boolean") ||
+        (own(value, "structuredContent") && !object(value.structuredContent))
+      )
+        throw new ConnectorError(INVALID_REPLY);
+    }
     if (
       answer &&
       own(reply, "error") &&
@@ -416,6 +435,224 @@ if (
   const { default: assert } = await import("node:assert/strict");
   const { fixture, waitUntil, ask } = await import("./testing.mjs");
   const { writeFile, chmod } = await import("node:fs/promises");
+  test("real IPv6 listener and future content types preserve the app response", async () => {
+    const f = await fixture("::1");
+    const replies = [];
+    const bridge = new Bridge({
+      path: f.path,
+      send: (value) => replies.push(value),
+    });
+    try {
+      await f.write();
+      f.result = {
+        content: [
+          { type: "text", text: "résumé" },
+          { type: "image", mimeType: "image/png", data: "AA==" },
+          {
+            type: "resource_link",
+            uri: "file:///synthetic.txt",
+            name: "synthetic",
+          },
+          { type: "future-extension", value: { keep: true } },
+        ],
+        structuredContent: { items: [null, false, 0, "", { nested: [1, 2] }] },
+        _meta: { trace: "preserved" },
+        isError: false,
+      };
+      assert.deepEqual(
+        (await ask(bridge, replies, "tools/call", { name: "loci_future" }))
+          .result,
+        f.result,
+      );
+      assert.equal(f.requests.length, 1);
+    } finally {
+      bridge.close();
+      await f.close();
+    }
+  });
+  test("invalid result envelopes fail safely and the next valid call recovers", async () => {
+    const f = await fixture();
+    const replies = [];
+    const bridge = new Bridge({
+      path: f.path,
+      read: f.read,
+      send: (value) => replies.push(value),
+    });
+    try {
+      await f.write();
+      for (const result of [
+        null,
+        [],
+        "PRIVATE_INVALID",
+        42,
+        {},
+        { content: "PRIVATE_INVALID" },
+        { content: [null] },
+        { content: [{ type: "text", text: 42 }] },
+        { content: [], isError: "false" },
+        { content: [], structuredContent: [] },
+      ]) {
+        f.result = result;
+        f.respond = (message, req, res) => {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }));
+          return true;
+        };
+        const reply = await ask(bridge, replies, "tools/call", {
+          name: "loci_status",
+        });
+        assert.equal(reply.error?.code, -32000, JSON.stringify(result));
+        assert.equal(JSON.stringify(reply).includes("PRIVATE"), false);
+      }
+      f.respond = undefined;
+      f.result = undefined;
+      assert.ok(
+        (await ask(bridge, replies, "tools/call", { name: "loci_status" }))
+          .result,
+      );
+    } finally {
+      bridge.close();
+      await f.close();
+    }
+  });
+  test("SSE priming, interrupted final events and invalid notifications", async () => {
+    const f = await fixture();
+    const replies = [];
+    const bridge = new Bridge({
+      path: f.path,
+      read: f.read,
+      send: (value) => replies.push(value),
+    });
+    try {
+      await f.write();
+      for (const mode of ["primed", "unfinished", "bad-notification"]) {
+        f.respond = (message, req, res) => {
+          res.writeHead(200, { "Content-Type": "text/event-stream" });
+          if (mode === "primed") res.write("id: 1\ndata:\n\n");
+          if (mode === "bad-notification")
+            res.write(
+              'data: {"jsonrpc":"2.0","method":"notifications/progress","result":{}}\n\n',
+            );
+          res.end(
+            `data: ${JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { content: [] } })}${mode === "unfinished" ? "\n" : "\n\n"}`,
+          );
+          return true;
+        };
+        const reply = await ask(bridge, replies, "tools/call", {
+          name: "loci_generate",
+        });
+        if (mode === "primed") assert.ok(reply.result, mode);
+        else assert.equal(reply.error?.code, -32000, mode);
+      }
+      assert.equal(
+        replies.some((r) => r.method && r.result),
+        false,
+      );
+    } finally {
+      bridge.close();
+      await f.close();
+    }
+  });
+  test("simultaneous requests retain IDs and release every slot across repeated bursts", async () => {
+    const f = await fixture();
+    const replies = [];
+    const bridge = new Bridge({
+      path: f.path,
+      read: f.read,
+      send: (value) => replies.push(value),
+    });
+    try {
+      await f.write();
+      f.respond = async (message, req, res) => {
+        await new Promise((resolve) =>
+          setTimeout(resolve, (message.id % 7) * 2),
+        );
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: message.id,
+            result: { content: [{ type: "text", text: String(message.id) }] },
+          }),
+        );
+        return true;
+      };
+      for (let round = 0; round < 10; round++) {
+        const results = await Promise.all(
+          Array.from({ length: 64 }, () =>
+            ask(bridge, replies, "tools/call", { name: "loci_generate" }),
+          ),
+        );
+        for (const reply of results)
+          assert.equal(reply.result.content[0].text, String(reply.id));
+        assert.equal(bridge.pending.size, 0);
+        assert.equal(bridge.active.size, 0);
+      }
+      assert.equal(new Set(replies.map((r) => r.id)).size, 640);
+      assert.equal(f.requests.length, 640);
+    } finally {
+      bridge.close();
+      await f.close();
+    }
+  });
+  test("each HTTP refusal, reset and invalid byte sequence fails once without credentials in errors", async () => {
+    const f = await fixture();
+    const replies = [];
+    const bridge = new Bridge({
+      path: f.path,
+      read: f.read,
+      send: (value) => replies.push(value),
+      limits: { idle: 100, total: 1000 },
+    });
+    try {
+      await f.write();
+      for (const mode of [
+        301,
+        307,
+        308,
+        401,
+        403,
+        413,
+        421,
+        429,
+        500,
+        503,
+        "reset",
+        "utf8",
+        "empty",
+        "error-shape",
+      ]) {
+        f.respond = (message, req, res) => {
+          if (mode === "reset") res.destroy();
+          else if (mode === "utf8") res.end(Buffer.from([255]));
+          else if (mode === "empty") res.end();
+          else if (mode === "error-shape")
+            res.end(
+              JSON.stringify({
+                jsonrpc: "2.0",
+                id: message.id,
+                error: { code: "PRIVATE", message: 42 },
+              }),
+            );
+          else {
+            res.writeHead(mode);
+            res.end("PRIVATE_TOKEN");
+          }
+          return true;
+        };
+        const count = f.requests.length;
+        const reply = await ask(bridge, replies, "tools/call", {
+          name: "loci_generate",
+        });
+        assert.equal(reply.error?.code, -32000, String(mode));
+        assert.equal(f.requests.length, count + 1);
+        assert.equal(JSON.stringify(reply).includes("PRIVATE"), false);
+      }
+    } finally {
+      bridge.close();
+      await f.close();
+    }
+  });
   test("missing app, damaged settings and new tools recover without restarting", async () => {
     const f = await fixture();
     const replies = [];

@@ -1,6 +1,7 @@
 // Newline-delimited JSON-RPC only on stdout. Bound both unfinished input and
 // queued output; cancel active local work on EOF, a broken pipe or termination.
 import { pathToFileURL, fileURLToPath } from "node:url";
+import { realpathSync } from "node:fs";
 import { Bridge } from "./bridge.mjs";
 import {
   ConnectorError,
@@ -207,7 +208,7 @@ async function main(args) {
 
 if (
   process.argv[1] &&
-  pathToFileURL(process.argv[1]).href === import.meta.url
+  pathToFileURL(realpathSync(process.argv[1])).href === import.meta.url
 ) {
   if (!process.env.NODE_TEST_CONTEXT) {
     try {
@@ -227,6 +228,122 @@ if (
     const { PassThrough, Writable } = await import("node:stream");
     const { spawn } = await import("node:child_process");
     const { fixture, waitUntil } = await import("./testing.mjs");
+    test("launcher handles spaces and tries installed alternatives when PATH Node is outdated", async () => {
+      const { mkdtemp, copyFile, writeFile, rm, access } = await import(
+        "node:fs/promises"
+      );
+      const { tmpdir } = await import("node:os");
+      const { join, dirname } = await import("node:path");
+      const { execFile } = await import("node:child_process");
+      const { promisify } = await import("node:util");
+      const run = promisify(execFile);
+      const directory = await mkdtemp(
+        join(tmpdir(), "Loci Launcher With Spaces "),
+      );
+      const source = dirname(fileURLToPath(import.meta.url));
+      const env = { ...process.env };
+      delete env.NODE_TEST_CONTEXT;
+      try {
+        for (const name of [
+          "launch.sh",
+          "stdio.mjs",
+          "bridge.mjs",
+          "endpoint.mjs",
+          "protocol.mjs",
+          "sse.mjs",
+        ])
+          await copyFile(join(source, name), join(directory, name));
+        assert.equal(
+          (
+            await run("/bin/sh", [join(directory, "launch.sh"), "--version"], {
+              env,
+            })
+          ).stdout.trim(),
+          VERSION,
+        );
+        await writeFile(join(directory, "node"), "#!/bin/sh\nexit 1\n", {
+          mode: 0o700,
+        });
+        let compatible = false;
+        for (const runtime of [
+          "/opt/homebrew/bin/node",
+          "/usr/local/bin/node",
+        ]) {
+          try {
+            await access(runtime);
+            await run(runtime, [
+              "-e",
+              'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)',
+            ]);
+            compatible = true;
+          } catch {}
+        }
+        for (const path of [directory, "/nonexistent"]) {
+          const attempt = run(
+            "/bin/sh",
+            [join(directory, "launch.sh"), "--version"],
+            { env: { ...env, PATH: path } },
+          );
+          if (compatible) assert.equal((await attempt).stdout.trim(), VERSION);
+          else
+            await assert.rejects(
+              attempt,
+              (error) =>
+                error.code === 1 &&
+                error.stdout === "" &&
+                /Node.js 22/.test(error.stderr),
+            );
+        }
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    });
+    test("output overflow and termination cancel active requests and remove listeners", async () => {
+      const f = await fixture();
+      await f.write();
+      f.result = {
+        content: [{ type: "text", text: "x".repeat(6 * 1024 * 1024) }],
+      };
+      const input = new PassThrough();
+      const output = new Writable({
+        highWaterMark: 1,
+        write(chunk, encoding, callback) {},
+      });
+      const task = serve(input, output, { path: f.path, read: f.read });
+      const rejected = assert.rejects(task, /not reading replies/);
+      try {
+        for (let id = 0; id < 5; id++)
+          input.write(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id,
+              method: "tools/call",
+              params: { name: "loci_generate" },
+            }) + "\n",
+          );
+        await rejected;
+        assert.equal(input.listenerCount("data"), 0);
+        assert.equal(output.listenerCount("drain"), 0);
+      } finally {
+        input.end();
+        output.destroy();
+        await f.close();
+      }
+      for (const before of [false, true]) {
+        const controller = new AbortController();
+        if (before) controller.abort();
+        const input = new PassThrough(),
+          output = new PassThrough();
+        const task = serve(input, output, {
+          path: "/nonexistent",
+          signal: controller.signal,
+        });
+        if (!before) controller.abort();
+        await task;
+        assert.equal(input.listenerCount("data"), 0);
+        assert.equal(output.listenerCount("error"), 0);
+      }
+    });
     test("stdio handles malformed lines, fragmented UTF-8 and EOF cancellation", async () => {
       const f = await fixture();
       await f.write();
