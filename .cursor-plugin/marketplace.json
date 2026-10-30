@@ -8,7 +8,7 @@
       "name": "loci",
       "source": "./loci-cursor",
       "description": "Local models alongside Cursor",
-      "version": "0.1.3"
+      "version": "0.1.5"
     }
   ]
 }

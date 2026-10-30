@@ -11,7 +11,19 @@ Guide a new user from plugin installation to their first local answer. Assume th
 
 Call `loci_setup`. This tool works before Loci is installed and returns a connection check and the official download link. A missing connection can also mean the app is closed or Agent Access is off; do not describe it as proof the app is absent.
 
-When not connected, lead with this short path rather than configuration instructions:
+Give a short explanation of the problem and one concrete next action. Use available tools to help with authorized routine steps. Keep state codes, process IDs, ports and version numbers out of the user-facing explanation unless they are needed to resolve a version mismatch or the user asks for detail.
+
+Follow the returned `next_step`:
+
+- `check_models`: continue with model readiness below.
+- `check_loci_connection`: identify the intended app and its profile, and check Agent Access. A stale or unverified connection is not proof that the app is missing. A responding `/health` endpoint alone is not a working connection.
+- `repair_loci_connection`: use the targeted connection repair below. Do not send the user through installation or client registration again.
+- `update_loci`: check the intended direct-download app for an update through its normal update flow, then check the connection again.
+- `install_or_open_loci`: first check whether Loci is installed, open, and has Agent Access enabled. Offer installation only if the app is absent.
+
+For an older connector without these fields, follow its specific error message and verify the installed plugin version. Do not interpret every failed check as a missing app.
+
+When the app is absent, use this installation path:
 
 1. [Download Loci for Mac](https://askloci.ai/api/mac-download). If Loci is already installed, open it instead.
 2. Open the downloaded disk image, then open **Install Loci** and follow its prompts. Open the installed Loci app and complete its first-time setup.
@@ -21,9 +33,13 @@ Use this direct-download link rather than the Mac App Store, which does not prov
 
 After the user returns, call `loci_setup` again. It rechecks the local connection and announces newly available model tools. If it is still disconnected, help with opening Loci or Agent Access; do not send an existing user through installation again or keep polling while waiting for them. If a successful check adds new tools, refresh or search the available tools before calling them. If Claude Code still shows only loci_setup, ask the user to send “Continue” so the next turn can use the refreshed list. Reconnect the plugin only if the tools are still missing.
 
-If the check reports damaged connection settings, an invalid access token, or unsafe file permissions, ask the user to quit and reopen Loci, then call `loci_setup` again. Loci recreates its connection settings when it starts. Do not edit the file, weaken its permissions, copy credentials, or reinstall the app as the first recovery step. If Loci reports an installer error or macOS blocks it, show the specific next step from the installer; do not bypass macOS security warnings.
+If the saved connection is stale or unverified, identify the intended Loci app before changing anything. A development or test app may use a different profile from the normal app. Do not borrow its credentials, guess a port, or stop an unrelated running instance.
+
+For damaged connection settings or a refused token, refresh Settings → Advanced → Agent Access by turning it off and on in the intended app when no work is running. Assist with this through available tools when authorized. Reopen that same app only if needed and safe. Then call `loci_setup` again before any model operation. Re-reading an unchanged file or re-registering a client does not repair stale settings. Do not edit credentials, weaken file permissions, or reinstall the app as the first recovery step. Stop after one unchanged repair attempt and explain the remaining mismatch. If Loci reports an installer error or macOS blocks it, show the specific next step from the installer; do not bypass macOS security warnings.
 
 If `loci_setup` itself is unavailable, run `/bin/sh "../../connector/launch.sh" --check`, resolving the path from this skill folder. If the check reports missing or outdated Node.js, direct the user to https://nodejs.org/ to install an LTS version (22 or later), restart Claude Code, and retry. Do not treat a missing runtime as a missing Loci app. Other failed checks follow the connection guidance above. Never treat the plugin's successful initialization alone as a successful connection to Loci.
+
+The app and connector have separate versions. Compare `connector_version` from `loci_setup` with the installed plugin manifest when available. If the tool is older than the installed package or lacks its expected setup features, refresh the Loci marketplace/plugin and start a new conversation before diagnosing the app further. Updating the plugin does not update Loci, and updating Loci does not replace a cached plugin.
 
 ## Get the model ready
 

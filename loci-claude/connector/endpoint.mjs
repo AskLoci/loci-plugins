@@ -14,7 +14,7 @@ import {
 
 const LIMIT = 16 * 1024;
 const INVALID =
-  "Invalid Loci connection file. Quit and reopen Loci to refresh it, then run loci_setup again.";
+  "Loci’s connection settings need refreshing. In the intended Loci app, turn Settings → Advanced → Agent Access off and on when no work is running, then run loci_setup again.";
 export function endpointPath(env = process.env) {
   if (env.LOCI_AGENT_API_FILE) return env.LOCI_AGENT_API_FILE;
   if (!env.HOME) throw new ConnectorError("The home directory is unavailable.");
@@ -26,20 +26,24 @@ export function parseEndpoint(bytes) {
   try {
     file = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   } catch {
-    throw new ConnectorError(INVALID);
+    throw new ConnectorError(INVALID, "invalid_connection");
   }
-  if (!object(file)) throw new ConnectorError(INVALID);
+  if (!object(file)) throw new ConnectorError(INVALID, "invalid_connection");
   if (!Number.isInteger(file.pid) || file.pid <= 0 || file.pid > 0xffffffff)
-    throw new ConnectorError(STALE);
+    throw new ConnectorError(STALE, "stale_connection");
   if (typeof file.token !== "string" || !/^[a-f\d]{64}$/i.test(file.token))
     throw new ConnectorError(
-      "Invalid Loci access token. Reopen Loci to refresh it.",
+      "Invalid Loci access token. Refresh Agent Access in the intended Loci app when no work is running, then run loci_setup again.",
+      "invalid_connection",
     );
   let url;
   try {
     url = new URL(file.mcp_url);
   } catch {
-    throw new ConnectorError("Invalid Loci MCP address.");
+    throw new ConnectorError(
+      "Invalid Loci MCP address. Refresh Agent Access in the intended Loci app.",
+      "invalid_connection",
+    );
   }
   if (
     url.protocol !== "http:" ||
@@ -53,6 +57,7 @@ export function parseEndpoint(bytes) {
   ) {
     throw new ConnectorError(
       "The Loci connector accepts only a local loopback MCP address.",
+      "invalid_connection",
     );
   }
   if (url.hostname === "localhost") url.hostname = "127.0.0.1";
@@ -60,24 +65,27 @@ export function parseEndpoint(bytes) {
 }
 
 function fields(record) {
-  if (!record.endsWith("\0")) throw new ConnectorError(INSPECTION_FAILED);
+  if (!record.endsWith("\0"))
+    throw new ConnectorError(INSPECTION_FAILED, "connection_unverified");
   const values = record.slice(0, -1).split("\0");
   if (values.some((value) => !value))
-    throw new ConnectorError(INSPECTION_FAILED);
+    throw new ConnectorError(INSPECTION_FAILED, "connection_unverified");
   return values;
 }
 
 export function verifyInspection(endpoint, uid, code, output) {
-  if (code === 1 && output.length === 0) throw new ConnectorError(STALE);
+  if (code === 1 && output.length === 0)
+    throw new ConnectorError(STALE, "stale_connection");
   if (code !== 0 || output.length > LIMIT)
-    throw new ConnectorError(INSPECTION_FAILED);
+    throw new ConnectorError(INSPECTION_FAILED, "connection_unverified");
   let text;
   try {
     text = new TextDecoder("utf-8", { fatal: true }).decode(output);
   } catch {
-    throw new ConnectorError(INSPECTION_FAILED);
+    throw new ConnectorError(INSPECTION_FAILED, "connection_unverified");
   }
-  if (!text.endsWith("\n")) throw new ConnectorError(INSPECTION_FAILED);
+  if (!text.endsWith("\n"))
+    throw new ConnectorError(INSPECTION_FAILED, "connection_unverified");
   const records = text.slice(0, -1).split("\n");
   const processFields = fields(records.shift());
   if (
@@ -85,10 +93,11 @@ export function verifyInspection(endpoint, uid, code, output) {
     !/^p\d+$/.test(processFields[0]) ||
     !/^u\d+$/.test(processFields[1])
   )
-    throw new ConnectorError(INSPECTION_FAILED);
+    throw new ConnectorError(INSPECTION_FAILED, "connection_unverified");
   const expected = `${endpoint.url.hostname}:${endpoint.url.port || "80"}`;
   let matched = false;
-  if (!records.length) throw new ConnectorError(INSPECTION_FAILED);
+  if (!records.length)
+    throw new ConnectorError(INSPECTION_FAILED, "connection_unverified");
   for (const record of records) {
     const values = fields(record);
     const data = new Map(values.map((value) => [value[0], value.slice(1)]));
@@ -99,14 +108,14 @@ export function verifyInspection(endpoint, uid, code, output) {
       data.get("T") !== "ST=LISTEN" ||
       !["IPv4", "IPv6"].includes(data.get("t"))
     )
-      throw new ConnectorError(INSPECTION_FAILED);
+      throw new ConnectorError(INSPECTION_FAILED, "connection_unverified");
     const address = data.get("n");
     if (
       !address ||
       !/^(127\.0\.0\.1|\[::1\]):\d+$/.test(address) ||
       (address.startsWith("[") ? "IPv6" : "IPv4") !== data.get("t")
     )
-      throw new ConnectorError(INSPECTION_FAILED);
+      throw new ConnectorError(INSPECTION_FAILED, "connection_unverified");
     matched ||= address === expected;
   }
   if (
@@ -114,7 +123,7 @@ export function verifyInspection(endpoint, uid, code, output) {
     Number(processFields[1].slice(1)) !== uid ||
     !matched
   )
-    throw new ConnectorError(STALE);
+    throw new ConnectorError(STALE, "stale_connection");
 }
 
 export function inspectListener(endpoint, uid, signal) {
@@ -165,19 +174,22 @@ export async function readEndpoint(path, signal, inspect = inspectListener) {
       error.code === "ENOENT"
         ? UNAVAILABLE
         : "Cannot read Loci’s connection file. Open Loci and check Settings → Advanced → Agent Access.",
+      error.code === "ENOENT" ? "unavailable" : "invalid_connection",
     );
   }
   let endpoint, uid;
   try {
     const info = await file.stat();
-    if (!info.isFile() || info.size > LIMIT) throw new ConnectorError(INVALID);
+    if (!info.isFile() || info.size > LIMIT)
+      throw new ConnectorError(INVALID, "invalid_connection");
     if (
       (info.mode & 0o077) !== 0 ||
       typeof process.getuid !== "function" ||
       info.uid !== process.getuid()
     ) {
       throw new ConnectorError(
-        "Loci’s connection file must be readable only by its owner. Reopen Loci to refresh it.",
+        "Loci’s connection file must be readable only by its owner. Refresh Agent Access in the intended Loci app when no work is running.",
+        "invalid_connection",
       );
     }
     const bytes = Buffer.alloc(LIMIT + 1);
@@ -192,13 +204,16 @@ export async function readEndpoint(path, signal, inspect = inspectListener) {
       if (!bytesRead) break;
       total += bytesRead;
     }
-    if (total > LIMIT) throw new ConnectorError(INVALID);
+    if (total > LIMIT) throw new ConnectorError(INVALID, "invalid_connection");
     endpoint = parseEndpoint(bytes.subarray(0, total));
     uid = info.uid;
   } catch (error) {
     throw error instanceof ConnectorError
       ? error
-      : new ConnectorError("Cannot read Loci’s connection file.");
+      : new ConnectorError(
+          "Cannot read Loci’s connection file. Check Agent Access in the intended Loci app.",
+          "invalid_connection",
+        );
   } finally {
     await file.close();
   }

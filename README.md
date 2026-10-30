@@ -14,7 +14,7 @@ codex plugin marketplace add AskLoci/loci-plugins
 
 In the desktop app, open the Plugins Directory, select **Loci**, and install the **Loci** plugin. If the marketplace does not appear, restart the desktop app. Start a new chat and ask: “Help me set up Loci.”
 
-[Download the Codex plugin (0.1.4)](https://github.com/AskLoci/loci-plugins/releases/download/v0.1.4/loci-0.1.4-macos-arm64.zip).
+[Download the Codex plugin (0.1.5)](https://github.com/AskLoci/loci-plugins/releases/download/v0.1.5/loci-0.1.5-macos-arm64.zip).
 
 ## Claude Code
 
@@ -42,6 +42,8 @@ Use the Loci MCP bundle with a local macOS client that supports MCPB, or configu
 ## Connect Loci
 
 Open Loci and enable **Settings → Advanced → Agent Access**. Keep Loci running while using the plugin. The setup tool checks the connection and helps choose an installed model or a compatible download. Existing models are shared with the app.
+
+If the saved connection is stale or refused, setup gives a connection-repair step before any model work. App and plugin updates are separate; each client can have a different plugin version.
 
 ## Data and file access
 
