@@ -8,7 +8,6 @@ import {
   VERSION,
   MAX_BYTES,
   hasModelTools,
-  DOWNLOAD,
 } from "./protocol.mjs";
 
 export async function serve(input, output, options = {}) {
@@ -133,13 +132,26 @@ export async function serve(input, output, options = {}) {
   return done;
 }
 
-export async function check(options = {}) {
+export async function check({ deadlineMs = 15000, ...options } = {}) {
   const replies = [];
   const bridge = new Bridge({
     ...options,
     send: (reply) => replies.push(reply),
   });
-  try {
+  let timer;
+  const deadline = new Promise((resolve, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new ConnectorError(
+            "Loci did not finish its connection check in time. Check Agent Access in the intended Loci app before trying again.",
+            "connection_failed",
+          ),
+        ),
+      deadlineMs,
+    );
+  });
+  const work = async () => {
     await bridge.receive(
       JSON.stringify({
         jsonrpc: "2.0",
@@ -159,17 +171,36 @@ export async function check(options = {}) {
       JSON.stringify({
         jsonrpc: "2.0",
         id: 2,
+        method: "tools/call",
+        params: { name: "loci_setup", arguments: {} },
+      }),
+    );
+    const setup = replies.find((reply) => reply.id === 2)?.result
+      ?.structuredContent;
+    if (!setup?.connected)
+      throw new ConnectorError(
+        setup?.message ??
+          "Loci’s connection could not be checked. Open the intended Loci app and check Agent Access.",
+      );
+    await bridge.receive(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 3,
         method: "tools/list",
         params: {},
       }),
     );
-    const listed = replies.find((reply) => reply.id === 2);
+    const listed = replies.find((reply) => reply.id === 3);
     if (!hasModelTools(listed))
       throw new ConnectorError(
-        `Loci is not connected or needs an update. Download Loci from ${DOWNLOAD}, open it, and enable Settings → Advanced → Agent Access.`,
+        "Loci’s tools changed during the connection check. Check Agent Access in the intended Loci app and try again.",
       );
-    return `Connected to Loci. Available tools: ${listed.result.tools.map((tool) => tool.name).join(", ")}`;
+    return `Connected to Loci with connector ${VERSION}. Available tools: ${listed.result.tools.map((tool) => tool.name).join(", ")}`;
+  };
+  try {
+    return await Promise.race([work(), deadline]);
   } finally {
+    clearTimeout(timer);
     bridge.close();
   }
 }
@@ -414,6 +445,61 @@ if (
       output.destroy();
       await task;
     });
+    test("the whole connection check bounds initialization and both tool checks without retries", { timeout: 5000 }, async (context) => {
+      for (const blockedId of [1, 2, 3]) {
+        const f = await fixture();
+        let reachedResolve, closedResolve;
+        const reached = new Promise((resolve) => {
+          reachedResolve = resolve;
+        });
+        const closed = new Promise((resolve) => {
+          closedResolve = resolve;
+        });
+        try {
+          f.respond = (message, request, response) => {
+            if (message.id !== blockedId) return false;
+            response.once("close", closedResolve);
+            reachedResolve();
+            return true;
+          };
+          context.mock.timers.enable({ apis: ["setTimeout"] });
+          const pending = assert.rejects(
+            check({
+              path: f.path,
+              read: async () => ({
+                url: new URL(f.url),
+                token: f.token,
+                pid: process.pid,
+              }),
+              deadlineMs: 1000,
+              limits: { total: 5000, idle: 5000, setup: 5000 },
+            }),
+            (error) =>
+              error instanceof ConnectorError &&
+              error.connectionState === "connection_failed" &&
+              /connection check in time/.test(error.message) &&
+              !error.message.includes(f.token),
+          );
+          await reached;
+          context.mock.timers.tick(1000);
+          await pending;
+          await closed;
+          assert.deepEqual(
+            f.requests.map(({ message }) => message.method),
+            blockedId === 1
+              ? ["initialize"]
+              : [
+                  "initialize",
+                  "notifications/initialized",
+                  ...Array(blockedId - 1).fill("tools/list"),
+                ],
+          );
+        } finally {
+          context.mock.timers.reset();
+          await f.close();
+        }
+      }
+    });
     test("real CLI exits, keeps stdout protocol-only and distinguishes offline --check", async () => {
       const f = await fixture();
       const run = (args, data) =>
@@ -468,6 +554,14 @@ if (
         const connected = await run(["--check"]);
         assert.equal(connected.code, 0);
         assert.match(connected.stdout, /loci_transcribe/);
+        f.token = "b".repeat(64);
+        const refused = await run(["--check"]);
+        assert.equal(refused.code, 1);
+        assert.equal(refused.stdout, "");
+        assert.match(refused.stderr, /Agent Access off and on/);
+        assert.equal(refused.stderr.includes(f.token), false);
+        await f.write();
+        assert.equal((await run(["--check"])).code, 0);
       } finally {
         await f.close();
       }

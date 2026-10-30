@@ -12,6 +12,9 @@ import {
   META_CLIENT,
   INSTRUCTIONS,
   UNAVAILABLE,
+  AUTHENTICATION_FAILED,
+  INCOMPATIBLE_APP,
+  CONNECTION_FAILED,
   object,
   own,
   validRequest,
@@ -177,25 +180,36 @@ export class Bridge {
     };
     if (message.params?._meta) probe.params._meta = message.params._meta;
     let connected = false,
-      detail = UNAVAILABLE;
+      detail = UNAVAILABLE,
+      connectionState = "unavailable";
+    let answer;
     const probeEntry = { controller: entry.controller, answered: false };
     try {
       await this.forward(
         probe,
         probeEntry,
         (reply) => {
-          if (own(reply, "id")) connected = hasModelTools(reply);
+          if (own(reply, "id") && reply.id === probe.id) answer = reply;
         },
         this.limits.setup,
       );
+      connected = hasModelTools(answer);
+      const failed = !answer || own(answer, "error");
       detail = connected
         ? "Loci is connected. Call loci_status to check model readiness and any download already in progress."
-        : "Loci answered but did not expose its model tools. Open Loci and check for an update.";
+        : failed ? CONNECTION_FAILED : INCOMPATIBLE_APP;
+      connectionState = connected
+        ? "connected" : failed ? "connection_failed" : "incompatible_app";
     } catch (error) {
-      detail = error instanceof ConnectorError ? error.message : UNAVAILABLE;
+      detail =
+        error instanceof ConnectorError ? error.message : CONNECTION_FAILED;
+      connectionState =
+        error instanceof ConnectorError
+          ? error.connectionState
+          : "connection_failed";
     }
     if (!connected) this.catalog = undefined;
-    this.emit(setupReport(message, connected, detail), entry);
+    this.emit(setupReport(message, connected, detail, connectionState), entry);
     if (before !== this.catalog)
       this.emit(
         { jsonrpc: "2.0", method: "notifications/tools/list_changed" },
@@ -358,12 +372,15 @@ export class Bridge {
         );
       if ([401, 403, 413, 421].includes(status)) {
         const messages = {
-          401: "Loci refused its access token. Reopen Loci to refresh the connection.",
+          401: AUTHENTICATION_FAILED,
           403: "Loci refused the request origin.",
           413: "The request is too large. Send fewer or smaller items.",
           421: "Loci refused the local host address.",
         };
-        throw new ConnectorError(messages[status]);
+        throw new ConnectorError(
+          messages[status],
+          status === 401 ? "authentication_failed" : "connection_failed",
+        );
       }
       if (status === 202 && !own(message, "id")) return;
       const parse = (text) => {
@@ -418,7 +435,9 @@ export class Bridge {
       }
     } catch (error) {
       if (error instanceof ConnectorError) throw error;
-      throw new ConnectorError(timed.signal.aborted ? TIMEOUT : UNAVAILABLE);
+      throw new ConnectorError(
+        timed.signal.aborted ? TIMEOUT : CONNECTION_FAILED,
+      );
     } finally {
       clearTimeout(timer);
       request?.destroy();
@@ -435,6 +454,69 @@ if (
   const { default: assert } = await import("node:assert/strict");
   const { fixture, waitUntil, ask } = await import("./testing.mjs");
   const { writeFile, chmod } = await import("node:fs/promises");
+  test("setup distinguishes missing, damaged, stale and refused connections and recovers without retries", async () => {
+    const f = await fixture();
+    const replies = [];
+    const bridge = new Bridge({
+      path: f.path,
+      read: f.read,
+      send: (value) => replies.push(value),
+    });
+    const setup = async () =>
+      (await ask(bridge, replies, "tools/call", { name: "loci_setup" })).result
+        .structuredContent;
+    try {
+      let report = await setup();
+      assert.equal(report.connection_state, "unavailable");
+      assert.equal(report.next_step, "install_or_open_loci");
+      assert.equal(report.connector_version, VERSION);
+      await writeFile(f.path, "PRIVATE_BROKEN", { mode: 0o600 });
+      report = await setup();
+      assert.equal(report.connection_state, "invalid_connection");
+      assert.equal(report.next_step, "repair_loci_connection");
+      await writeFile(
+        f.path,
+        JSON.stringify({ pid: 0xffffffff, token: f.token, mcp_url: f.url }),
+      );
+      report = await setup();
+      assert.equal(report.connection_state, "stale_connection");
+      assert.equal(report.next_step, "check_loci_connection");
+      assert.equal(f.requests.length, 0);
+      await f.write();
+      f.token = "b".repeat(64);
+      report = await setup();
+      assert.equal(report.connected, false);
+      assert.equal(report.connection_state, "authentication_failed");
+      assert.equal(report.next_step, "repair_loci_connection");
+      assert.equal(f.requests.length, 1);
+      await f.write();
+      report = await setup();
+      assert.equal(report.connected, true);
+      assert.equal(report.connection_state, "connected");
+      assert.equal(report.next_step, "check_models");
+      f.tools.length = 0;
+      report = await setup();
+      assert.equal(report.connection_state, "incompatible_app");
+      assert.equal(report.next_step, "update_loci");
+      for (const status of [200, 503]) {
+        f.respond = (message, req, res) => {
+          res.writeHead(status, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ jsonrpc: "2.0", id: message.id,
+            error: { code: -32603, message: "PRIVATE_TRANSIENT_ERROR" } }));
+          return true;
+        };
+        report = await setup();
+        assert.equal(report.connected, false);
+        assert.equal(report.connection_state, "connection_failed");
+        assert.equal(report.next_step, "check_loci_connection");
+      }
+      assert.equal(JSON.stringify(replies).includes("PRIVATE"), false);
+      assert.equal(JSON.stringify(replies).includes(f.token), false);
+    } finally {
+      bridge.close();
+      await f.close();
+    }
+  });
   test("real IPv6 listener and future content types preserve the app response", async () => {
     const f = await fixture("::1");
     const replies = [];

@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 // Public MCP contract: retain app schemas/results and add setup discovery only.
-export const VERSION = "0.1.6";
+export const VERSION = "0.1.7";
 export const MAX_BYTES = 8 * 1024 * 1024;
 export const META_VERSION = "io.modelcontextprotocol/protocolVersion";
 export const META_CLIENT = "io.modelcontextprotocol/clientInfo";
@@ -14,9 +14,15 @@ export const DOWNLOAD = "https://askloci.ai/api/mac-download";
 export const GUIDE = "https://askloci.ai/agents/";
 export const UNAVAILABLE = `Loci is not connected. Download the Mac app from ${DOWNLOAD} if needed. Open Loci and enable Settings → Advanced → Agent Access, then run loci_setup again.`;
 export const STALE =
-  "No active Loci app matches the saved connection. Open the intended Loci direct-download app, then run loci_setup again.";
+  "Loci’s saved connection belongs to an earlier or different app session. Check Agent Access in the intended Loci app, then run loci_setup again. A development or test app may use separate connection settings. No access token was sent.";
 export const INSPECTION_FAILED =
   "Loci’s saved connection could not be verified. Check that the intended Loci direct-download app is open with Settings → Advanced → Agent Access enabled, then run loci_setup again. No access token was sent.";
+export const AUTHENTICATION_FAILED =
+  "Loci refused the saved connection. In the intended Loci app, turn Settings → Advanced → Agent Access off and on when no work is running, then run loci_setup again. Re-reading the same settings or registering the plugin again will not repair them.";
+export const INCOMPATIBLE_APP =
+  "Loci answered but did not expose its model tools. Open the intended Loci direct-download app and check for an update, then run loci_setup again.";
+export const CONNECTION_FAILED =
+  "The connection to Loci could not be completed. Check Agent Access in the intended Loci app, then run loci_setup again.";
 export const INSTRUCTIONS =
   "Loci runs models on this Mac alongside your assistant. If Loci is not connected, call loci_setup for the Mac download link and connection instructions. After connecting, call loci_status to choose an installed model or a recommended compatible download. Use the tools the connected app advertises. Only use authorized file paths and output destinations. Inputs and results returned to the calling assistant follow that client’s data policies.";
 export const CORE_TOOLS = [
@@ -26,7 +32,12 @@ export const CORE_TOOLS = [
   "loci_pull",
   "loci_warm",
 ];
-export class ConnectorError extends Error {}
+export class ConnectorError extends Error {
+  constructor(message, connectionState = "connection_failed") {
+    super(message);
+    this.connectionState = connectionState;
+  }
+}
 export const object = (value) =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 export const own = (value, key) => Object.hasOwn(value, key);
@@ -140,9 +151,21 @@ export function offlineReply(request) {
   return result(request, body);
 }
 
-export function setupReport(request, connected, detail) {
+export function setupReport(request, connected, detail, connectionState) {
+  const state = connected
+    ? "connected"
+    : (connectionState ??
+      (detail === STALE
+        ? "stale_connection"
+        : detail === INSPECTION_FAILED
+          ? "connection_unverified"
+          : detail === UNAVAILABLE
+            ? "unavailable"
+            : "connection_failed"));
   const status = {
     connected,
+    connector_version: VERSION,
+    connection_state: state,
     download_url: DOWNLOAD,
     guide_url: GUIDE,
     requirements: {
@@ -153,9 +176,13 @@ export function setupReport(request, connected, detail) {
     message: detail,
     next_step: connected
       ? "check_models"
-      : [STALE, INSPECTION_FAILED].includes(detail)
-        ? "check_loci_connection"
-        : "install_or_open_loci",
+      : state === "unavailable"
+        ? "install_or_open_loci"
+        : ["invalid_connection", "authentication_failed"].includes(state)
+          ? "repair_loci_connection"
+          : state === "incompatible_app"
+            ? "update_loci"
+            : "check_loci_connection",
   };
   return result(request, {
     content: [{ type: "text", text: JSON.stringify(status) }],
