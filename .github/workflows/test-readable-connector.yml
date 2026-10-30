@@ -1,0 +1,42 @@
+name: Test readable Claude connector
+on:
+  pull_request:
+    paths:
+      [
+        "loci-claude/**",
+        ".claude-plugin/marketplace.json",
+        ".github/workflows/test-readable-connector.yml",
+      ]
+  push:
+    branches: [main]
+    paths:
+      [
+        "loci-claude/**",
+        ".claude-plugin/marketplace.json",
+        ".github/workflows/test-readable-connector.yml",
+      ]
+permissions:
+  contents: read
+jobs:
+  connector:
+    runs-on: macos-15
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        node: ["22", "24"]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Test connector and operating-system boundaries
+        run: node --test --test-concurrency=1 loci-claude/connector/*.mjs
+      - name: Verify launcher
+        run: /bin/sh loci-claude/connector/launch.sh --version
+      - name: Reject packaged native executables and dependencies
+        run: |
+          test ! -e loci-claude/bin
+          test ! -e loci-claude/node_modules
+          test ! -e loci-claude/THIRD_PARTY_NOTICES.txt

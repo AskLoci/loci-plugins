@@ -18,6 +18,8 @@ In the desktop app, open the Plugins Directory, select **Loci**, and install the
 
 ## Claude Code
 
+Requires [Node.js 22 or later](https://nodejs.org/).
+
 Add the marketplace and install Loci:
 
 ```sh
