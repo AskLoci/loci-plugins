@@ -1,9 +1,11 @@
-name: Test readable Claude connector
+name: Test plugin connectors
 on:
   pull_request:
     paths:
       [
         "loci-claude/**",
+        "loci/**",
+        "tests/codex-package.test.mjs",
         ".claude-plugin/marketplace.json",
         ".github/workflows/test-readable-connector.yml",
       ]
@@ -12,6 +14,8 @@ on:
     paths:
       [
         "loci-claude/**",
+        "loci/**",
+        "tests/codex-package.test.mjs",
         ".claude-plugin/marketplace.json",
         ".github/workflows/test-readable-connector.yml",
       ]
@@ -33,6 +37,8 @@ jobs:
           node-version: ${{ matrix.node }}
       - name: Test connector and operating-system boundaries
         run: node --test --test-concurrency=1 loci-claude/connector/*.mjs
+      - name: Verify Codex package loading contract
+        run: node --test tests/codex-package.test.mjs
       - name: Verify launcher
         run: /bin/sh loci-claude/connector/launch.sh --version
       - name: Reject packaged native executables and dependencies
