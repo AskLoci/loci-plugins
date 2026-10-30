@@ -1,6 +1,6 @@
 {
   "name": "loci",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Use local models alongside Codex for file summaries, document extraction, search, transcription, and batch processing.",
   "author": {
     "name": "Loci",
@@ -115,7 +115,7 @@
         }
       },
       "publication": {
-        "release_notes": "Task-aware model selection, older-app setup support, and clearer local processing guidance."
+        "release_notes": "Fix Codex startup for plugin-managed connections."
       }
     }
   }
