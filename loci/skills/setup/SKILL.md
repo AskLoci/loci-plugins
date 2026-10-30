@@ -9,6 +9,8 @@ Guide a new user from plugin installation to their first local answer. Assume th
 
 ## Get Loci and connect it
 
+If this skill loads but Loci tools are missing, inspect the client’s plugin startup errors first. Update the plugin through its manager and use a current client. In Codex, an old manual `loci` MCP registration may still point into a deleted plugin-cache version. When repairing setup, back up and remove only a registration confirmed to point to a missing Loci connector, using `codex mcp remove loci`, after confirming the current plugin is installed. Preserve working or custom registrations and all other settings; keep credential values out of logs. Start a new conversation and verify that the plugin’s tools are available.
+
 Call `loci_setup`. This tool works before Loci is installed and returns a connection check and the official download link. A missing connection can also mean the app is closed or Agent Access is off; do not describe it as proof the app is absent.
 
 Give a short explanation of the problem and one concrete next action. Use available tools to help with authorized routine steps. Keep state codes, process IDs, ports and version numbers out of the user-facing explanation unless they are needed to resolve a version mismatch or the user asks for detail.
@@ -29,7 +31,7 @@ When the app is absent, use this installation path:
 2. Open the downloaded disk image, then open **Install Loci** and follow its prompts. Open the installed Loci app and complete its first-time setup.
 3. In Loci, check that Settings → Advanced → Agent Access is enabled. Return here and say “Ready.”
 
-Use this direct-download link rather than the Mac App Store, which does not provide Agent Access. When the user chooses to download, open the link with an available browser tool; otherwise leave the clickable link. Do not silently replace another app, change settings, stop a running session, or download a model. Give one next step at a time if the user needs help. No terminal commands, manual credential copying, or separate runtime installation are needed.
+Use this direct-download link rather than the Mac App Store, which does not provide Agent Access. When the user chooses to download, open the link with an available browser tool; otherwise leave the clickable link. Do not silently replace another app, change settings, stop a running session, or download a model. Give one next step at a time if the user needs help. For normal setup, no terminal commands, manual credential copying, or separate runtime installation are needed.
 
 After the user returns, call `loci_setup` again. It rechecks the local connection and announces newly available model tools. If it is still disconnected, help with opening Loci or Agent Access; do not send an existing user through installation again or keep polling while waiting for them. If the host has not refreshed its tool list after a successful check, ask the user to reconnect the plugin and continue here.
 
