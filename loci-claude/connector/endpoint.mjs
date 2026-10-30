@@ -131,6 +131,10 @@ export function inspectListener(endpoint, uid, signal) {
     execFile(
       "/usr/sbin/lsof",
       [
+        // Socket ownership needs no filesystem stat/readlink probes.
+        "-b",
+        // Keep unrelated skipped-filesystem warnings out of the bounded buffer.
+        "-w",
         "-nP",
         "-l",
         "-a",

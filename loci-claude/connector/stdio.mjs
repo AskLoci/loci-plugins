@@ -445,25 +445,32 @@ if (
       output.destroy();
       await task;
     });
-    test("the whole connection check bounds initialization and both tool checks without retries", async () => {
+    test("the whole connection check bounds initialization and both tool checks without retries", { timeout: 5000 }, async (context) => {
       for (const blockedId of [1, 2, 3]) {
         const f = await fixture();
-        let closed = false;
+        let reachedResolve, closedResolve;
+        const reached = new Promise((resolve) => {
+          reachedResolve = resolve;
+        });
+        const closed = new Promise((resolve) => {
+          closedResolve = resolve;
+        });
         try {
-          await f.write();
           f.respond = (message, request, response) => {
             if (message.id !== blockedId) return false;
-            response.once("close", () => {
-              closed = true;
-            });
+            response.once("close", closedResolve);
+            reachedResolve();
             return true;
           };
-          const started = Date.now();
-          await assert.rejects(
+          context.mock.timers.enable({ apis: ["setTimeout"] });
+          const pending = assert.rejects(
             check({
               path: f.path,
-              read: f.read,
-              // Allow real socket handshakes to reach the chosen stalled stage.
+              read: async () => ({
+                url: new URL(f.url),
+                token: f.token,
+                pid: process.pid,
+              }),
               deadlineMs: 1000,
               limits: { total: 5000, idle: 5000, setup: 5000 },
             }),
@@ -473,8 +480,10 @@ if (
               /connection check in time/.test(error.message) &&
               !error.message.includes(f.token),
           );
-          assert.ok(Date.now() - started < 4000);
-          await waitUntil(() => closed);
+          await reached;
+          context.mock.timers.tick(1000);
+          await pending;
+          await closed;
           assert.deepEqual(
             f.requests.map(({ message }) => message.method),
             blockedId === 1
@@ -486,6 +495,7 @@ if (
                 ],
           );
         } finally {
+          context.mock.timers.reset();
           await f.close();
         }
       }
