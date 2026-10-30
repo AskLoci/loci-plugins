@@ -463,7 +463,8 @@ if (
             check({
               path: f.path,
               read: f.read,
-              deadlineMs: 100,
+              // Allow real socket handshakes to reach the chosen stalled stage.
+              deadlineMs: 1000,
               limits: { total: 5000, idle: 5000, setup: 5000 },
             }),
             (error) =>
@@ -472,7 +473,7 @@ if (
               /connection check in time/.test(error.message) &&
               !error.message.includes(f.token),
           );
-          assert.ok(Date.now() - started < 2000);
+          assert.ok(Date.now() - started < 4000);
           await waitUntil(() => closed);
           assert.deepEqual(
             f.requests.map(({ message }) => message.method),
