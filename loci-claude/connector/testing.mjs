@@ -20,7 +20,7 @@ export async function ask(bridge, replies, method, params = {}) {
   await bridge.receive(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
   return replies.find((reply) => reply.id === id);
 }
-export async function fixture() {
+export async function fixture(host = "127.0.0.1") {
   const directory = await mkdtemp(join(tmpdir(), "loci-readable-test-"));
   const f = {
     path: join(directory, "agent-api.json"),
@@ -47,6 +47,7 @@ export async function fixture() {
       for await (const chunk of req) text += chunk;
       const message = JSON.parse(text);
       f.requests.push({ message, headers: req.headers });
+      if (f.respond && (await f.respond(message, req, res))) return;
       const answer = (result) => ({ jsonrpc: "2.0", id: message.id, result });
       const json = (value) => {
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -159,15 +160,15 @@ export async function fixture() {
   });
   await new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
+    server.listen(0, host, resolve);
   });
-  f.url = `http://127.0.0.1:${server.address().port}/mcp`;
+  f.url = `http://${host === "::1" ? "[::1]" : host}:${server.address().port}/mcp`;
   // Mock the OS inspection in unit tests, keeping file validation and the full
   // HTTP boundary real. Separate endpoint/CLI tests run the system inspector.
   f.read = (path, signal) =>
     readEndpoint(path, signal, async (endpoint, uid) => {
       const address = `${endpoint.url.hostname}:${endpoint.url.port || "80"}`;
-      const record = `p${process.pid}\0u${process.getuid()}\0\nf9\0tIPv4\0n${address}\0TST=LISTEN\0\n`;
+      const record = `p${process.pid}\0u${process.getuid()}\0\nf9\0t${host === "::1" ? "IPv6" : "IPv4"}\0n${address}\0TST=LISTEN\0\n`;
       verifyInspection(endpoint, uid, 0, Buffer.from(record));
     });
   f.write = async (path = f.path) =>

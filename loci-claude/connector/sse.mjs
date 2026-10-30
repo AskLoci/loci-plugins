@@ -14,8 +14,8 @@ export class SseReader {
     this.stopped = false;
   }
   dispatch() {
-    if (this.data.length)
-      this.stopped = this.deliver(this.data.join("\n")) === true;
+    const text = this.data.join("\n");
+    if (text.length) this.stopped = this.deliver(text) === true;
     this.data = [];
     this.bytes = 0;
   }
@@ -56,9 +56,10 @@ export class SseReader {
     if (Buffer.byteLength(this.buffer) > this.limit)
       throw new ConnectorError("Loci’s event is too large.");
     if (end) {
-      if (this.buffer) this.line(this.buffer);
+      // Only a blank line commits an SSE event; EOF discards unfinished data.
       this.buffer = "";
-      if (!this.stopped) this.dispatch();
+      this.data = [];
+      this.bytes = 0;
     }
   }
 }
@@ -70,6 +71,41 @@ if (
 ) {
   const { test } = await import("node:test");
   const { default: assert } = await import("node:assert/strict");
+  test("empty priming events and unfinished events do not become messages", () => {
+    const events = [];
+    const reader = new SseReader((text) => {
+      events.push(text);
+    });
+    reader.push(
+      Buffer.from("id: 1\ndata:\n\ndata: answer\n\ndata: unfinished\n"),
+    );
+    reader.push(new Uint8Array(), true);
+    assert.deepEqual(events, ["answer"]);
+  });
+  test("random chunk boundaries preserve long Unicode progress streams", () => {
+    const expected = Array.from(
+      { length: 500 },
+      (_, i) => `progress ${i} café 🍐 漢字`,
+    );
+    const bytes = Buffer.from(
+      expected.map((value) => `data: ${value}\r\n\r\n`).join(""),
+    );
+    for (let seed = 1; seed <= 20; seed++) {
+      let state = seed;
+      const events = [];
+      const reader = new SseReader((value) => {
+        events.push(value);
+      }, 128);
+      for (let offset = 0; offset < bytes.length; ) {
+        state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+        const next = offset + 1 + (state % 97);
+        reader.push(bytes.subarray(offset, next));
+        offset = next;
+      }
+      reader.push(new Uint8Array(), true);
+      assert.deepEqual(events, expected);
+    }
+  });
   test("all byte boundaries, UTF-8, CRLF, BOM, comments and multiline events", () => {
     const bytes = Buffer.from(
       "\ufeff:keepalive\r\nevent: message\r\ndata: café\r\ndata: 🍐\r\n\r\ndata: tail",
@@ -82,7 +118,7 @@ if (
       reader.push(bytes.subarray(0, split));
       reader.push(bytes.subarray(split));
       reader.push(new Uint8Array(), true);
-      assert.deepEqual(events, ["café\n🍐", "tail"]);
+      assert.deepEqual(events, ["café\n🍐"]);
     }
   });
   test("memory bounds, malformed UTF-8 and final response close", () => {

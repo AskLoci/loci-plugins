@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 // Public MCP contract: retain app schemas/results and add setup discovery only.
-export const VERSION = "0.1.5";
+export const VERSION = "0.1.6";
 export const MAX_BYTES = 8 * 1024 * 1024;
 export const META_VERSION = "io.modelcontextprotocol/protocolVersion";
 export const META_CLIENT = "io.modelcontextprotocol/clientInfo";
