@@ -30,11 +30,14 @@ import {
 const INVALID_REPLY = "Loci sent an invalid MCP response.";
 const TIMEOUT =
   "Loci did not finish this request in time. Check Loci before retrying.";
+// setTimeout runs any longer delay, Infinity included, after 1 ms.
+const bounded = (ms) => Math.min(ms, 2 ** 31 - 1);
 export class Bridge {
   /**
    * @param {{path?: string, send: (reply: object) => void,
    *   read?: typeof readEndpoint, limits?: {connect?: number, idle?: number,
-   *   total?: number, setup?: number, bytes?: number, concurrent?: number}}} options
+   *   total?: number, work?: number, setup?: number, bytes?: number,
+   *   concurrent?: number}}} options
    */
   constructor({
     path = endpointPath(),
@@ -49,6 +52,7 @@ export class Bridge {
       connect: 3000,
       idle: 90000,
       total: 600000,
+      work: 3600000,
       setup: 10000,
       bytes: MAX_BYTES,
       concurrent: 64,
@@ -332,7 +336,7 @@ export class Bridge {
 
   async forward(message, entry, send, duration = this.limits.total) {
     const timed = new AbortController();
-    const timer = setTimeout(() => timed.abort(), duration);
+    let timer = setTimeout(() => timed.abort(), bounded(duration));
     const signal = AbortSignal.any([entry.controller.signal, timed.signal]);
     let request,
       stalled = false;
@@ -356,11 +360,11 @@ export class Bridge {
         });
         let connectTimer;
         request.once("socket", (socket) => {
-          connectTimer = setTimeout(expire, this.limits.connect);
+          connectTimer = setTimeout(expire, bounded(this.limits.connect));
           socket.once("connect", () => clearTimeout(connectTimer));
         });
         request.once("close", () => clearTimeout(connectTimer));
-        request.setTimeout(this.limits.idle, expire);
+        request.setTimeout(bounded(this.limits.idle), expire);
         request.once("error", reject);
         request.once("response", resolve);
         request.end(body);
@@ -398,7 +402,19 @@ export class Bridge {
           .trim()
           .toLowerCase() === "text/event-stream";
       if (streaming) {
-        const reader = new SseReader(parse, this.limits.bytes);
+        // Events, not keep-alive comments, keep a streamed tool call running.
+        let working = () => {};
+        if (message.method === "tools/call") {
+          working = () => {
+            clearTimeout(timer);
+            timer = setTimeout(expire, bounded(this.limits.work));
+          };
+          working();
+        }
+        const reader = new SseReader((text) => {
+          working();
+          return parse(text);
+        }, this.limits.bytes);
         for await (const chunk of response) {
           reader.push(chunk);
           if (entry.answered) return;
@@ -900,7 +916,7 @@ if (
       path: f.path,
       read: f.read,
       send: (value) => replies.push(value),
-      limits: { bytes: 2048, idle: 80, total: 600, setup: 600 },
+      limits: { bytes: 2048, idle: 80, total: 600, work: 300, setup: 600 },
     });
     try {
       await f.write();
@@ -991,6 +1007,162 @@ if (
     } finally {
       quick.close();
       steady.close();
+      await f.close();
+    }
+  });
+  test("a streamed tool call outlives the total limit while events arrive and still ends on its limits, cancellation or close", async () => {
+    const f = await fixture();
+    const replies = [];
+    const send = (value) => replies.push(value);
+    const bridge = new Bridge({
+      path: f.path,
+      read: f.read,
+      send,
+      limits: { idle: 400, total: 300, work: 600, setup: 300 },
+    });
+    const timed = async (method, params) => {
+      const started = Date.now();
+      const reply = await ask(bridge, replies, method, params);
+      return { reply, ms: Date.now() - started };
+    };
+    const beat = (res, chunk = ": keep-alive\n\n") => {
+      const timer = setInterval(() => res.write(chunk), 20);
+      res.once("close", () => clearInterval(timer));
+    };
+    try {
+      await f.write();
+      f.respond = (message, req, res) => {
+        if (message.params?.arguments?.mode !== "progress") return false;
+        res.writeHead(200, { "Content-Type": "text/event-stream" });
+        let sent = 0;
+        const timer = setInterval(() => {
+          const progress = {
+            jsonrpc: "2.0",
+            method: "notifications/progress",
+            params: { progressToken: "work", progress: ++sent },
+          };
+          res.write(`data: ${JSON.stringify(progress)}\n\n`);
+          if (sent < 24) return;
+          clearInterval(timer);
+          const result = { content: [{ type: "text", text: "done" }] };
+          res.end(
+            `data: ${JSON.stringify({ jsonrpc: "2.0", id: message.id, result })}\n\n`,
+          );
+        }, 50);
+        res.once("close", () => clearInterval(timer));
+        return true;
+      };
+      let { reply, ms } = await timed("tools/call", {
+        name: "loci_generate",
+        arguments: { mode: "progress" },
+      });
+      assert.equal(reply.result.content[0].text, "done");
+      assert.ok(ms >= 1000, String(ms));
+      ({ reply, ms } = await timed("tools/call", {
+        name: "loci_generate",
+        arguments: { mode: "heartbeat" },
+      }));
+      assert.equal(reply.error.message, TIMEOUT);
+      assert.ok(ms >= 600, String(ms));
+      await waitUntil(() => f.closed.includes(reply.id));
+      f.respond = (message, req, res) => {
+        if (message.method === "tools/call") {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.write("{");
+          beat(res, " ");
+        } else {
+          res.writeHead(200, { "Content-Type": "text/event-stream" });
+          beat(res);
+        }
+        return true;
+      };
+      ({ reply, ms } = await timed("tools/call", { name: "loci_status" }));
+      assert.equal(reply.error.message, TIMEOUT);
+      assert.ok(ms >= 300 && ms < 5000, String(ms));
+      ({ reply, ms } = await timed("prompts/get", { name: "summary" }));
+      assert.equal(reply.error.message, TIMEOUT);
+      assert.ok(ms >= 300 && ms < 5000, String(ms));
+      ({ reply, ms } = await timed("tools/call", { name: "loci_setup" }));
+      assert.equal(reply.result.structuredContent.connected, false);
+      assert.equal(reply.result.structuredContent.message, TIMEOUT);
+      assert.ok(ms >= 300 && ms < 5000, String(ms));
+      f.respond = undefined;
+      for (const [id, end] of [
+        [
+          "cancelled",
+          () =>
+            bridge.receive(
+              JSON.stringify({
+                jsonrpc: "2.0",
+                method: "notifications/cancelled",
+                params: { requestId: "cancelled" },
+              }),
+            ),
+        ],
+        ["closed", () => bridge.close()],
+      ]) {
+        const count = f.requests.length;
+        const pending = bridge.receive(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id,
+            method: "tools/call",
+            params: { name: "loci_generate", arguments: { mode: "heartbeat" } },
+          }),
+        );
+        await waitUntil(() => f.requests.length === count + 1);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        await end();
+        await pending;
+        await waitUntil(() => f.closed.includes(id));
+        assert.equal(replies.some((value) => value.id === id), false);
+      }
+      assert.equal(f.requests.length, 7);
+      assert.equal(JSON.stringify(replies).includes(f.token), false);
+    } finally {
+      bridge.close();
+      await f.close();
+    }
+  });
+  test("very long or unlimited limits are not treated as immediate timeouts", async () => {
+    const f = await fixture();
+    const replies = [];
+    const bridge = new Bridge({
+      path: f.path,
+      read: f.read,
+      send: (value) => replies.push(value),
+      limits: { connect: 2 ** 40, idle: Infinity, total: 2 ** 40, work: Infinity },
+    });
+    try {
+      await f.write();
+      assert.ok(
+        (await ask(bridge, replies, "tools/call", { name: "loci_status" }))
+          .result,
+      );
+      const pending = bridge.receive(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: "long",
+          method: "tools/call",
+          params: { name: "loci_generate", arguments: { mode: "heartbeat" } },
+        }),
+      );
+      await waitUntil(() => f.requests.length === 2);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      assert.equal(replies.some((value) => value.id === "long"), false);
+      assert.equal(f.closed.includes("long"), false);
+      await bridge.receive(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          method: "notifications/cancelled",
+          params: { requestId: "long" },
+        }),
+      );
+      await pending;
+      await waitUntil(() => f.closed.includes("long"));
+      assert.equal(replies.some((value) => value.id === "long"), false);
+    } finally {
+      bridge.close();
       await f.close();
     }
   });
