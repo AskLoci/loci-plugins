@@ -41,6 +41,6 @@ Model inference runs on your Mac. The assistant receives the prompts, paths and 
 
 The connector communicates only with Loci over local loopback. It reads Loci’s owner-only connection file and never needs you to paste its access token. Model downloads use the model sources configured by Loci. The connector has no separate analytics or external reporting endpoint; Loci’s own data practices are described in its privacy policy.
 
-If the connection is unavailable, open Loci and check Agent Access. For damaged connection settings, quit and reopen Loci, then ask your assistant to check the connection again.
+If the connection is unavailable, open Loci and check Agent Access. For damaged connection settings, first identify the intended Loci app. Let active work and downloads finish before turning Settings → Advanced → Agent Access off and on. Then ask your assistant to check the connection again. Reopen that same app only if needed and safe.
 
 [Support](https://askloci.ai/support) · [Privacy](https://askloci.ai/privacy) · [Terms](https://askloci.ai/terms)
