@@ -205,8 +205,8 @@ export async function check({ deadlineMs = 15000, ...options } = {}) {
   }
 }
 
-async function main(args) {
-  if (Number(process.versions.node.split(".")[0]) < 22)
+async function main(args, nodeVersion = process.versions.node) {
+  if (Number(nodeVersion.split(".")[0]) < 22)
     throw new ConnectorError(
       "Loci requires Node.js 22 or later. Install an LTS version from https://nodejs.org and restart Claude Code.",
     );
@@ -259,8 +259,8 @@ if (
     const { PassThrough, Writable } = await import("node:stream");
     const { spawn } = await import("node:child_process");
     const { fixture, waitUntil } = await import("./testing.mjs");
-    test("launcher handles spaces and tries installed alternatives when PATH Node is outdated", async () => {
-      const { mkdtemp, copyFile, writeFile, rm, access } = await import(
+    test("manifest launches bundled JavaScript directly from a path with spaces", async () => {
+      const { mkdtemp, cp, readFile, mkdir, symlink, rm } = await import(
         "node:fs/promises"
       );
       const { tmpdir } = await import("node:os");
@@ -269,64 +269,82 @@ if (
       const { promisify } = await import("node:util");
       const run = promisify(execFile);
       const directory = await mkdtemp(
-        join(tmpdir(), "Loci Launcher With Spaces "),
+        join(tmpdir(), "Loci Plugin With Spaces Café "),
       );
-      const source = dirname(fileURLToPath(import.meta.url));
+      const source = dirname(dirname(fileURLToPath(import.meta.url)));
+      const root = join(directory, "plugin");
+      const bin = join(directory, "bin");
       const env = { ...process.env };
       delete env.NODE_TEST_CONTEXT;
       try {
-        for (const name of [
-          "launch.sh",
-          "stdio.mjs",
-          "bridge.mjs",
-          "endpoint.mjs",
-          "protocol.mjs",
-          "sse.mjs",
-        ])
-          await copyFile(join(source, name), join(directory, name));
+        await cp(source, root, { recursive: true });
+        await mkdir(bin);
+        await symlink(process.execPath, join(bin, "node"));
+        const manifest = JSON.parse(
+          await readFile(join(root, ".mcp.json"), "utf8"),
+        );
+        const server = manifest.mcpServers.loci;
+        assert.deepEqual(server, {
+          command: "node",
+          args: ["${CLAUDE_PLUGIN_ROOT}/connector/stdio.mjs"],
+        });
+        const plugin = JSON.parse(
+          await readFile(join(root, ".claude-plugin/plugin.json"), "utf8"),
+        );
+        const marketplace = JSON.parse(
+          await readFile(
+            join(source, "../.claude-plugin/marketplace.json"),
+            "utf8",
+          ),
+        );
+        assert.equal(plugin.version, VERSION);
+        assert.equal(
+          marketplace.plugins.find((plugin) => plugin.name === "loci").version,
+          VERSION,
+        );
+        const args = server.args.map((arg) =>
+          arg.replace("${CLAUDE_PLUGIN_ROOT}", root),
+        );
+        assert.deepEqual(args, [join(root, "connector/stdio.mjs")]);
         assert.equal(
           (
-            await run("/bin/sh", [join(directory, "launch.sh"), "--version"], {
-              env,
+            await run(server.command, [...args, "--version"], {
+              env: { ...env, PATH: bin },
+              timeout: 10000,
             })
           ).stdout.trim(),
           VERSION,
         );
-        await writeFile(join(directory, "node"), "#!/bin/sh\nexit 1\n", {
-          mode: 0o700,
-        });
-        let compatible = false;
-        for (const runtime of [
-          "/opt/homebrew/bin/node",
-          "/usr/local/bin/node",
-        ]) {
-          try {
-            await access(runtime);
-            await run(runtime, [
-              "-e",
-              'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)',
-            ]);
-            compatible = true;
-          } catch {}
-        }
-        for (const path of [directory, "/nonexistent"]) {
-          const attempt = run(
-            "/bin/sh",
-            [join(directory, "launch.sh"), "--version"],
-            { env: { ...env, PATH: path } },
-          );
-          if (compatible) assert.equal((await attempt).stdout.trim(), VERSION);
-          else
-            await assert.rejects(
-              attempt,
-              (error) =>
-                error.code === 1 &&
-                error.stdout === "" &&
-                /Node.js 22/.test(error.stderr),
-            );
+        await assert.rejects(
+          run(server.command, args, {
+            env: { ...env, PATH: join(directory, "missing") },
+            timeout: 10000,
+          }),
+          (error) => error.code === "ENOENT",
+        );
+        for (const path of ["README.md", "skills/setup/SKILL.md"]) {
+          const guidance = await readFile(join(root, path), "utf8");
+          assert.match(guidance, /ENOENT/);
+          assert.match(guidance, /node --version/);
+          assert.match(guidance, /PATH/);
         }
       } finally {
         await rm(directory, { recursive: true, force: true });
+      }
+    });
+    test("unsupported Node fails before MCP work with secret-safe runtime guidance", async () => {
+      for (const version of ["18.20.8", "20.20.0", "21.7.3"]) {
+        await assert.rejects(
+          main(["PRIVATE_ARGUMENT"], version),
+          (error) => {
+            assert.ok(error instanceof ConnectorError);
+            assert.match(error.message, /Node.js 22 or later/);
+            assert.match(error.message, /https:\/\/nodejs.org/);
+            assert.match(error.message, /restart Claude Code/);
+            assert.doesNotMatch(error.message, /PRIVATE_ARGUMENT/);
+            return true;
+          },
+        );
       }
     });
     test("output overflow and termination cancel active requests and remove listeners", async () => {

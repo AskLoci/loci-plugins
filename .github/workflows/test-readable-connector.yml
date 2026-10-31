@@ -39,8 +39,8 @@ jobs:
         run: node --test --test-concurrency=1 loci-claude/connector/*.mjs
       - name: Verify Codex package loading contract
         run: node --test tests/codex-package.test.mjs
-      - name: Verify launcher
-        run: /bin/sh loci-claude/connector/launch.sh --version
+      - name: Verify direct entry point
+        run: node loci-claude/connector/stdio.mjs --version
       - name: Reject packaged native executables and dependencies
         run: |
           test ! -e loci-claude/bin

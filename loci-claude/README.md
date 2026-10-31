@@ -4,7 +4,9 @@ Use models on your Mac for summaries, rewriting, classification, structured outp
 
 ## Requirements
 
-An Apple silicon Mac with macOS 26.2 or later, Claude Code running locally, and the [Loci direct-download app](https://askloci.ai/api/mac-download). The Mac App Store version does not provide Agent Access. [Node.js 22 or later](https://nodejs.org/) must be installed on the Mac. If Claude Code cannot find Node after installation, restart Claude Code. No additional npm packages are required.
+An Apple silicon Mac with macOS 26.2 or later, Claude Code running locally, and the [Loci direct-download app](https://askloci.ai/api/mac-download). The Mac App Store version does not provide Agent Access. [Node.js 22 or later](https://nodejs.org/) must be available as `node` on Claude Code’s PATH. No additional npm packages are required.
+
+If startup reports `node` not found, `ENOENT`, or an outdated Node version, install an LTS version from [nodejs.org](https://nodejs.org/) and restart Claude Code. If Node is already installed, check that `node --version` reports 22 or later in your terminal, then start Claude Code from that terminal. A missing Node runtime does not mean Loci needs reinstalling.
 
 ## Install
 

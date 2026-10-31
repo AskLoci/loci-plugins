@@ -8,7 +8,7 @@
       "name": "loci",
       "source": "./loci-claude",
       "description": "Local models alongside Claude Code",
-      "version": "0.1.8"
+      "version": "0.1.9"
     }
   ]
 }
