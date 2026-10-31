@@ -32,12 +32,16 @@ const TIMEOUT =
   "Loci did not finish this request in time. Check Loci before retrying.";
 // setTimeout runs any longer delay, Infinity included, after 1 ms.
 const bounded = (ms) => Math.min(ms, 2 ** 31 - 1);
+// Answered without waiting behind model work; their own cap keeps them bounded.
+const CONTROL = new Set(["initialize", "ping", "server/discover", "tools/list"]);
+const BUSY = "Too many requests are waiting for Loci.";
 export class Bridge {
   /**
    * @param {{path?: string, send: (reply: object) => void,
    *   read?: typeof readEndpoint, limits?: {connect?: number, idle?: number,
    *   total?: number, work?: number, setup?: number, bytes?: number,
-   *   concurrent?: number}}} options
+   *   concurrent?: number, waiting?: number, waitingBytes?: number,
+   *   control?: number}}} options
    */
   constructor({
     path = endpointPath(),
@@ -56,10 +60,17 @@ export class Bridge {
       setup: 10000,
       bytes: MAX_BYTES,
       concurrent: 64,
+      waiting: 1024,
+      waitingBytes: 4 * MAX_BYTES,
+      control: 64,
       ...limits,
     };
     this.pending = new Map();
     this.active = new Set();
+    this.running = 0;
+    this.controls = 0;
+    this.waiting = [];
+    this.waitingBytes = 0;
     this.closed = false;
     this.version = undefined;
     this.client = "mcp-client";
@@ -100,17 +111,22 @@ export class Bridge {
       );
       return;
     }
-    if (this.active.size >= this.limits.concurrent) {
-      if (hasId)
-        this.emit(
-          failure(
-            message.id,
-            -32000,
-            "Too many requests are waiting for Loci.",
-          ),
-        );
+    const work =
+      hasId &&
+      !CONTROL.has(message.method) &&
+      !(message.method === "tools/call" && message.params?.name === "loci_setup");
+    const bytes = Buffer.byteLength(line);
+    const full = work
+      ? this.running >= this.limits.concurrent &&
+        (this.waiting.length >= this.limits.waiting ||
+          this.waitingBytes + bytes > this.limits.waitingBytes)
+      : this.controls >= this.limits.control;
+    if (full) {
+      if (hasId) this.emit(failure(message.id, -32000, BUSY));
       return;
     }
+    if (!work) this.controls++;
+    let slot = false;
     const entry = { controller: new AbortController(), answered: false };
     this.active.add(entry);
     if (hasId) this.pending.set(key, entry);
@@ -126,6 +142,10 @@ export class Bridge {
       this.client = `${clean(info.name)}/${clean(info.version ?? "unknown")}`;
     }
     try {
+      if (work) {
+        slot = await this.acquire(entry, bytes);
+        if (!slot || entry.controller.signal.aborted || this.closed) return;
+      }
       if (
         hasId &&
         message.method === "tools/call" &&
@@ -169,9 +189,48 @@ export class Bridge {
           entry,
         );
     } finally {
+      if (!work) this.controls--;
+      else if (slot) this.release();
       this.active.delete(entry);
       if (hasId && this.pending.get(key) === entry) this.pending.delete(key);
     }
+  }
+
+  /** Waits in arrival order for a model-work slot; false if cancelled first. */
+  acquire(entry, bytes) {
+    if (this.running < this.limits.concurrent) {
+      this.running++;
+      return true;
+    }
+    const signal = entry.controller.signal;
+    if (signal.aborted) return false;
+    return new Promise((resolve) => {
+      const waiter = {
+        bytes,
+        grant: () => {
+          signal.removeEventListener("abort", leave);
+          resolve(true);
+        },
+      };
+      const leave = () => {
+        this.waiting.splice(this.waiting.indexOf(waiter), 1);
+        this.waitingBytes -= bytes;
+        resolve(false);
+      };
+      signal.addEventListener("abort", leave, { once: true });
+      this.waiting.push(waiter);
+      this.waitingBytes += bytes;
+    });
+  }
+  /** Hands a finished request's slot straight to the oldest waiter. */
+  release() {
+    const next = this.waiting.shift();
+    if (!next) {
+      this.running--;
+      return;
+    }
+    this.waitingBytes -= next.bytes;
+    next.grant();
   }
 
   async setup(message, entry) {
@@ -1166,6 +1225,107 @@ if (
       await f.close();
     }
   });
+  test("model calls beyond the slot limit wait in order while control messages answer at once", async () => {
+    const f = await fixture();
+    const replies = [];
+    const bridge = new Bridge({
+      path: f.path,
+      read: f.read,
+      send: (value) => replies.push(value),
+      limits: { concurrent: 2, waiting: 3, control: 2 },
+    });
+    const release = [];
+    const started = [];
+    const call = (id, name = "loci_generate") =>
+      bridge.receive(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id,
+          method: "tools/call",
+          params: { name },
+        }),
+      );
+    try {
+      await f.write();
+      f.respond = async (message, req, res) => {
+        if (message.method === "tools/call") {
+          started.push(message.id);
+          await new Promise((resolve) => release.push(resolve));
+        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: message.id,
+            result:
+              message.method === "tools/call"
+                ? { content: [{ type: "text", text: String(message.id) }] }
+                : {},
+          }),
+        );
+        return true;
+      };
+      const calls = [1, 2, 3, 4, 5].map((id) => call(id));
+      await waitUntil(() => release.length === 2);
+      assert.equal(bridge.waiting.length, 3);
+      await call(6);
+      assert.equal(replies.at(-1).id, 6);
+      assert.equal(replies.at(-1).error.code, -32000);
+      assert.equal((await ask(bridge, replies, "ping")).error, undefined);
+      await bridge.receive(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          method: "notifications/cancelled",
+          params: { requestId: 4 },
+        }),
+      );
+      assert.equal(bridge.waiting.length, 2);
+      for (let done = 0; done < 4; done++) {
+        await waitUntil(() => release.length);
+        release.shift()();
+      }
+      await Promise.all(calls);
+      assert.deepEqual([...started.slice(0, 2).sort(), ...started.slice(2)], [1, 2, 3, 5]);
+      assert.deepEqual(
+        replies
+          .filter((reply) => reply.result?.content)
+          .map((reply) => reply.id)
+          .sort(),
+        [1, 2, 3, 5],
+      );
+      assert.equal(replies.some((reply) => reply.id === 4), false);
+
+      assert.equal(bridge.running, 0);
+      assert.equal(bridge.waitingBytes, 0);
+      f.respond = async (message, req, res) => {
+        await new Promise((resolve) => release.push(resolve));
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result: {} }));
+        return true;
+      };
+      const pings = ["p1", "p2"].map((id) =>
+        bridge.receive(JSON.stringify({ jsonrpc: "2.0", id, method: "ping" })),
+      );
+      await waitUntil(() => release.length === 2);
+      await bridge.receive(
+        JSON.stringify({ jsonrpc: "2.0", id: "p3", method: "ping" }),
+      );
+      assert.equal(replies.at(-1).id, "p3");
+      assert.equal(replies.at(-1).error.code, -32000);
+      for (const next of release.splice(0)) next();
+      await Promise.all(pings);
+      const queued = [7, 8, 9].map((id) => call(id));
+      await waitUntil(() => release.length === 2);
+      bridge.close();
+      for (const next of release.splice(0)) next();
+      await Promise.all(queued);
+      assert.equal(replies.some((reply) => reply.id === 9), false);
+      assert.equal(started.includes(9), false);
+    } finally {
+      bridge.close();
+      await f.close();
+    }
+  });
   test("cancellation, EOF, duplicate IDs, concurrency and retained-open result streams", async () => {
     const f = await fixture();
     const replies = [];
@@ -1173,7 +1333,7 @@ if (
       path: f.path,
       read: f.read,
       send: (value) => replies.push(value),
-      limits: { concurrent: 1 },
+      limits: { concurrent: 1, waiting: 0 },
     });
     try {
       await f.write();
@@ -1191,9 +1351,16 @@ if (
       );
       assert.equal(replies.at(-1).error.code, -32600);
       await bridge.receive(
-        JSON.stringify({ jsonrpc: "2.0", id: "full", method: "ping" }),
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: "full",
+          method: "tools/call",
+          params: { name: "loci_generate" },
+        }),
       );
       assert.equal(replies.at(-1).error.code, -32000);
+      const ping = await ask(bridge, replies, "ping");
+      assert.equal(ping.error, undefined);
       await bridge.receive(
         JSON.stringify({
           jsonrpc: "2.0",
@@ -1218,7 +1385,7 @@ if (
           params: { name: "loci_generate", arguments: { mode: "hang" } },
         }),
       );
-      await waitUntil(() => f.requests.length === 3);
+      await waitUntil(() => f.requests.length === 4);
       bridge.close();
       await final;
       await waitUntil(() => f.closed.length === 3);
