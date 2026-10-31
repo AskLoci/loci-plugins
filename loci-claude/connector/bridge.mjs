@@ -334,7 +334,12 @@ export class Bridge {
     const timed = new AbortController();
     const timer = setTimeout(() => timed.abort(), duration);
     const signal = AbortSignal.any([entry.controller.signal, timed.signal]);
-    let request;
+    let request,
+      stalled = false;
+    const expire = () => {
+      stalled = true;
+      request.destroy(new ConnectorError(TIMEOUT));
+    };
     try {
       const endpoint = await this.read(this.path, signal);
       signal.throwIfAborted();
@@ -351,16 +356,11 @@ export class Bridge {
         });
         let connectTimer;
         request.once("socket", (socket) => {
-          connectTimer = setTimeout(
-            () => request.destroy(new ConnectorError(TIMEOUT)),
-            this.limits.connect,
-          );
+          connectTimer = setTimeout(expire, this.limits.connect);
           socket.once("connect", () => clearTimeout(connectTimer));
         });
         request.once("close", () => clearTimeout(connectTimer));
-        request.setTimeout(this.limits.idle, () =>
-          request.destroy(new ConnectorError(TIMEOUT)),
-        );
+        request.setTimeout(this.limits.idle, expire);
         request.once("error", reject);
         request.once("response", resolve);
         request.end(body);
@@ -434,6 +434,7 @@ export class Bridge {
           throw new ConnectorError("Loci could not complete this request.");
       }
     } catch (error) {
+      if (stalled) throw new ConnectorError(TIMEOUT);
       if (error instanceof ConnectorError) throw error;
       throw new ConnectorError(
         timed.signal.aborted ? TIMEOUT : CONNECTION_FAILED,
@@ -921,11 +922,75 @@ if (
           arguments: { mode },
         });
         assert.equal(reply.error?.code, -32000, mode);
+        if (["hang", "heartbeat"].includes(mode))
+          assert.equal(reply.error.message, TIMEOUT, mode);
         assert.equal(f.requests.length, count + 1, mode);
         assert.equal(JSON.stringify(reply).includes("PRIVATE"), false);
       }
     } finally {
       bridge.close();
+      await f.close();
+    }
+  });
+  test("a reply that stops after it starts reports the timeout, not a connection failure", async () => {
+    const f = await fixture();
+    const replies = [];
+    const send = (value) => replies.push(value);
+    const quick = new Bridge({
+      path: f.path,
+      read: f.read,
+      send,
+      limits: { idle: 100 },
+    });
+    const steady = new Bridge({ path: f.path, read: f.read, send });
+    const generate = async (bridge, respond) => {
+      f.respond = respond;
+      return (
+        await ask(bridge, replies, "tools/call", {
+          name: "loci_generate",
+          arguments: { mode: "hang" },
+        })
+      ).error?.message;
+    };
+    const started = (res, type = "text/event-stream") =>
+      res.writeHead(200, { "Content-Type": type });
+    try {
+      await f.write();
+      assert.equal(await generate(quick, undefined), TIMEOUT);
+      assert.equal(
+        await generate(quick, (message, req, res) => {
+          started(res, "application/json");
+          res.write("{");
+          return true;
+        }),
+        TIMEOUT,
+      );
+      assert.equal(await generate(quick, () => true), TIMEOUT);
+      assert.equal(
+        await generate(steady, (message, req, res) => {
+          started(res);
+          res.write(": keepalive\n\n", () => res.destroy());
+          return true;
+        }),
+        CONNECTION_FAILED,
+      );
+      f.respond = (message, req, res) => {
+        started(res);
+        res.write(": keepalive\n\n");
+        return true;
+      };
+      const report = (
+        await ask(quick, replies, "tools/call", { name: "loci_setup" })
+      ).result.structuredContent;
+      assert.equal(report.connected, false);
+      assert.equal(report.message, TIMEOUT);
+      assert.equal(report.connection_state, "connection_failed");
+      assert.equal(report.next_step, "check_loci_connection");
+      assert.equal(f.requests.length, 5);
+      assert.equal(JSON.stringify(replies).includes(f.token), false);
+    } finally {
+      quick.close();
+      steady.close();
       await f.close();
     }
   });
