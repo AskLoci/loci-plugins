@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 // Public MCP contract: retain app schemas/results and add setup discovery only.
-export const VERSION = "0.1.9";
+export const VERSION = "0.1.10";
 export const MAX_BYTES = 8 * 1024 * 1024;
 export const META_VERSION = "io.modelcontextprotocol/protocolVersion";
 export const META_CLIENT = "io.modelcontextprotocol/clientInfo";
@@ -24,7 +24,7 @@ export const INCOMPATIBLE_APP =
 export const CONNECTION_FAILED =
   "The connection to Loci could not be completed. Check Agent Access in the intended Loci app, then run loci_setup again.";
 export const INSTRUCTIONS =
-  "Loci runs models on this Mac alongside your assistant. If Loci is not connected, call loci_setup for the Mac download link and connection instructions. After connecting, call loci_status and choose a model suited to the task. Honor explicit model choices and prefer suitable installed models; recommendation flags are optional. Use only advertised tools and arguments. Preserve active work and the app default; authorize new downloads. Only use authorized file paths and output destinations. Inputs and results returned to the calling assistant follow that client’s data policies.";
+  "Loci runs models on this Mac alongside your assistant. If Loci is not connected, call loci_setup for the Mac download link and connection instructions. After connecting, call loci_status and choose a model suited to the task. Honor explicit model choices and prefer suitable installed models; recommendation flags are optional. If models.checking is reported, preserve those checks and follow setup's bounded wait before considering a download. Use only advertised tools and arguments. Preserve active work and the app default; authorize new downloads. Only use authorized file paths and output destinations. Inputs and results returned to the calling assistant follow that client’s data policies.";
 export const CORE_TOOLS = [
   "loci_status",
   "loci_generate",

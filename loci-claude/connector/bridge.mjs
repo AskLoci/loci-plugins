@@ -196,7 +196,7 @@ export class Bridge {
       connected = hasModelTools(answer);
       const failed = !answer || own(answer, "error");
       detail = connected
-        ? "Loci is connected. Call loci_status to check model readiness and any download already in progress."
+        ? "Loci is connected. Call loci_status to check model readiness and any download or model check already in progress."
         : failed ? CONNECTION_FAILED : INCOMPATIBLE_APP;
       connectionState = connected
         ? "connected" : failed ? "connection_failed" : "incompatible_app";
@@ -552,6 +552,42 @@ if (
       await f.close();
     }
   });
+  test("optional model checks pass through without inventing readiness or starting work", async () => {
+    const f = await fixture();
+    const replies = [];
+    const bridge = new Bridge({
+      path: f.path,
+      send: (value) => replies.push(value),
+    });
+    try {
+      await f.write();
+      const states = [
+        { ready: true, models: { installed: [], downloading: [] } },
+        { ready: false, models: { installed: [], checking: ["pending"] } },
+        { ready: true, models: { installed: [], checking: ["pending", "active"] } },
+        { ready: true, models: { installed: [{ id: "active" }], checking: ["active"] } },
+        { ready: true, models: { installed: [{ id: "active" }], checking: [] } },
+        { ready: true, models: { installed: [], checking: [] } },
+      ];
+      for (const status of states) {
+        f.result = {
+          content: [{ type: "text", text: JSON.stringify(status) }],
+          structuredContent: status,
+          isError: false,
+        };
+        assert.deepEqual(
+          (await ask(bridge, replies, "tools/call", { name: "loci_status" })).result,
+          f.result,
+        );
+      }
+      assert.equal(f.requests.length, states.length);
+      assert.ok(f.requests.every(({ message }) => message.params.name === "loci_status"));
+    } finally {
+      bridge.close();
+      await f.close();
+    }
+  });
+
   test("invalid result envelopes fail safely and the next valid call recovers", async () => {
     const f = await fixture();
     const replies = [];
