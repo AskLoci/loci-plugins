@@ -9,7 +9,7 @@ Delegate bounded, reviewable work to models on the user's Mac. Loci can process 
 
 ## Connect and choose
 
-Call `loci_status` first. If only `loci_setup` is available or Loci is disconnected, follow [setup](../setup/SKILL.md). Use only tools advertised by the connected app; older apps may expose only status, generate, map, pull and warm. The current direct-download app requires an Apple silicon Mac with macOS 26.2 or later.
+Call `loci_status` first. If no Loci tools are available, only `loci_setup` is available, or Loci is disconnected, follow [setup](../setup/SKILL.md). Use only tools advertised by the connected app; older apps may expose only status, generate, map, pull and warm. The current direct-download app requires an Apple silicon Mac with macOS 26.2 or later.
 
 Use only reported model IDs. If `ready` is false, retry briefly and stop after three unchanged checks. Honor an explicitly requested model, including `default`; explain an incompatibility instead of silently substituting.
 
