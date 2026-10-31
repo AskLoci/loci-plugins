@@ -1,6 +1,6 @@
 {
   "name": "loci",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Use models on your Mac alongside Claude Code for summaries, classification, file processing and batch work. Tools depend on your Loci app version.",
   "author": {
     "name": "Loci",
