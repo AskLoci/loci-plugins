@@ -8,6 +8,10 @@
   },
   "homepage": "https://askloci.ai/agents/",
   "repository": "https://github.com/AskLoci/loci-plugins",
+  "documentationUrl": "https://askloci.ai/agents/",
+  "supportUrl": "https://askloci.ai/support",
+  "privacyPolicyUrl": "https://askloci.ai/privacy",
+  "termsOfServiceUrl": "https://askloci.ai/terms",
   "license": "MIT",
   "keywords": [
     "local-models",
