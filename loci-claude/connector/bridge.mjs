@@ -1280,12 +1280,16 @@ if (
         }),
       );
       assert.equal(bridge.waiting.length, 2);
-      for (let done = 0; done < 4; done++) {
-        await waitUntil(() => release.length);
+      for (const arrived of [3, 4]) {
         release.shift()();
+        await waitUntil(() => started.length === arrived);
       }
+      for (const next of release.splice(0)) next();
       await Promise.all(calls);
-      assert.deepEqual([...started.slice(0, 2).sort(), ...started.slice(2)], [1, 2, 3, 5]);
+      assert.deepEqual(
+        [...started.slice(0, 2).sort(), ...started.slice(2)],
+        [1, 2, 3, 5],
+      );
       assert.deepEqual(
         replies
           .filter((reply) => reply.result?.content)
