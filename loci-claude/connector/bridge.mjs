@@ -137,7 +137,7 @@ export class Bridge {
     if (typeof info?.name === "string") {
       const clean = (text) =>
         String(text)
-          .replace(/[^a-z0-9]/gi, "")
+          .replace(/[^a-z0-9._-]/gi, "")
           .slice(0, 80);
       this.client = `${clean(info.name)}/${clean(info.version ?? "unknown")}`;
     }
@@ -946,7 +946,7 @@ if (
         );
         assert.match(
           f.requests.at(-1).headers["user-agent"],
-          /claude\/12 loci-connector/,
+          /claude\/1\.2 loci-connector/,
         );
       }
       await ask(bridge, replies, "tools/call", {
