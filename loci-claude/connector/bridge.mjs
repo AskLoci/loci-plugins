@@ -33,7 +33,12 @@ const TIMEOUT =
 // setTimeout runs any longer delay, Infinity included, after 1 ms.
 const bounded = (ms) => Math.min(ms, 2 ** 31 - 1);
 // Answered without waiting behind model work; their own cap keeps them bounded.
-const CONTROL = new Set(["initialize", "ping", "server/discover", "tools/list"]);
+const CONTROL = new Set([
+  "initialize",
+  "ping",
+  "server/discover",
+  "tools/list",
+]);
 const BUSY = "Too many requests are waiting for Loci.";
 export class Bridge {
   /**
@@ -114,7 +119,9 @@ export class Bridge {
     const work =
       hasId &&
       !CONTROL.has(message.method) &&
-      !(message.method === "tools/call" && message.params?.name === "loci_setup");
+      !(
+        message.method === "tools/call" && message.params?.name === "loci_setup"
+      );
     const bytes = Buffer.byteLength(line);
     const full = work
       ? this.running >= this.limits.concurrent &&
@@ -1143,6 +1150,21 @@ if (
           res.once("close", () => clearInterval(timer));
           return true;
         }
+        if (mode === "trickle") {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.write("{");
+          const started = Date.now();
+          const timer = setInterval(() => {
+            if (Date.now() - started < 8000) return res.write(" ");
+            clearInterval(timer);
+            res.end("}");
+          }, 20);
+          res.once("close", () => {
+            clearInterval(timer);
+            f.closed.push(message.id);
+          });
+          return true;
+        }
         if (!["progress", "endless"].includes(mode)) return false;
         res.writeHead(200, { "Content-Type": "text/event-stream" });
         let sent = 0;
@@ -1170,16 +1192,18 @@ if (
         (await ask(steady, replies, "tools/call", { name: "loci_status" }))
           .result,
       );
-      const [progress, endless, heartbeat, prompt, setup] = await Promise.all([
-        generate(steady, "progress"),
-        generate(brief, "endless"),
-        generate(brief, "heartbeat"),
-        timed(steady, "prompts/get", { name: "summary" }),
-        timed(steady, "tools/call", { name: "loci_setup" }),
-      ]);
+      const [progress, endless, heartbeat, trickle, prompt, setup] =
+        await Promise.all([
+          generate(steady, "progress"),
+          generate(brief, "endless"),
+          generate(brief, "heartbeat"),
+          generate(brief, "trickle"),
+          timed(steady, "prompts/get", { name: "summary" }),
+          timed(steady, "tools/call", { name: "loci_setup" }),
+        ]);
       assert.equal(progress.reply.result?.content[0].text, "done");
       assert.ok(progress.ms >= 3000, String(progress.ms));
-      for (const { reply, ms } of [endless, heartbeat]) {
+      for (const { reply, ms } of [endless, heartbeat, trickle]) {
         assert.equal(reply.error?.message, TIMEOUT);
         near(ms, 2000);
         await waitUntil(() => f.closed.includes(reply.id));
@@ -1222,7 +1246,7 @@ if (
         await waitUntil(() => f.closed.includes(id));
         assert.equal(replies.some((value) => value.id === id), false);
       }
-      assert.equal(f.requests.length, 8);
+      assert.equal(f.requests.length, 9);
       assert.equal(JSON.stringify(replies).includes(f.token), false);
     } finally {
       steady.close();
@@ -1318,7 +1342,11 @@ if (
       await call(6);
       assert.equal(replies.at(-1).id, 6);
       assert.equal(replies.at(-1).error.code, -32000);
-      assert.equal((await ask(bridge, replies, "ping")).error, undefined);
+      await bridge.receive(
+        JSON.stringify({ jsonrpc: "2.0", id: "ping", method: "ping" }),
+      );
+      assert.equal(replies.at(-1).id, "ping");
+      assert.equal(replies.at(-1).error, undefined);
       await bridge.receive(
         JSON.stringify({
           jsonrpc: "2.0",
