@@ -204,13 +204,14 @@ if (
         delivered.push(text.length);
         return true;
       });
-      const started = performance.now();
+      const cpu = process.cpuUsage();
       for (let offset = 0; offset < bytes.length; offset += 16384)
         reader.push(bytes.subarray(offset, offset + 16384));
       reader.push(new Uint8Array(), true);
-      const elapsed = performance.now() - started;
+      const used = process.cpuUsage(cpu);
+      const ms = (used.user + used.system) / 1000;
       assert.deepEqual(delivered, [size]);
-      assert.ok(elapsed < 1000, `${size} bytes took ${Math.round(elapsed)} ms`);
+      assert.ok(ms < 1000, `${size} bytes took ${Math.round(ms)} ms of CPU`);
     }
     const bytes = Buffer.from(`data: ${"x".repeat(MAX_BYTES + 1)}\n\n`);
     const reader = new SseReader(() => true);
