@@ -135,11 +135,10 @@ export class Bridge {
         ? message.params?.clientInfo
         : message.params?._meta?.[META_CLIENT];
     if (typeof info?.name === "string") {
-      const clean = (text) =>
-        String(text)
-          .replace(/[^a-z0-9._-]/gi, "")
-          .slice(0, 80);
-      this.client = `${clean(info.name)}/${clean(info.version ?? "unknown")}`;
+      const clean = (text) => text.replace(/[^a-z0-9._-]/gi, "").slice(0, 80);
+      const version =
+        typeof info.version === "string" ? info.version : "unknown";
+      this.client = `${clean(info.name)}/${clean(version)}`;
     }
     try {
       if (work) {
@@ -958,6 +957,43 @@ if (
       assert.ok(
         replies.some((value) => value.method === "notifications/progress"),
       );
+    } finally {
+      bridge.close();
+      await f.close();
+    }
+  });
+  test("a client version that is not a string is sent as unknown and leaves no request behind", async () => {
+    const f = await fixture();
+    const replies = [];
+    const bridge = new Bridge({
+      path: f.path,
+      read: f.read,
+      send: (value) => replies.push(value),
+    });
+    try {
+      await f.write();
+      for (const version of [{ toString: 1 }, 2]) {
+        await bridge.receive(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: "ping",
+            method: "ping",
+            params: {
+              _meta: { [META_CLIENT]: { name: "claude-code", version } },
+            },
+          }),
+        );
+        assert.equal(replies.at(-1).id, "ping");
+        assert.ok(replies.at(-1).result, JSON.stringify(replies.at(-1)));
+        assert.equal(
+          f.requests.at(-1).headers["user-agent"],
+          `claude-code/unknown loci-connector/${VERSION}`,
+        );
+        assert.equal(bridge.controls, 0);
+        assert.equal(bridge.active.size, 0);
+        assert.equal(bridge.pending.size, 0);
+      }
+      assert.equal(replies.length, 2);
     } finally {
       bridge.close();
       await f.close();
