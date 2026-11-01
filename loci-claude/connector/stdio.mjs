@@ -10,6 +10,8 @@ import {
   hasModelTools,
 } from "./protocol.mjs";
 
+const UNREAD = "The MCP client is not reading replies.";
+
 export async function serve(input, output, options = {}) {
   let queued = [],
     queuedBytes = 0,
@@ -29,7 +31,7 @@ export async function serve(input, output, options = {}) {
       if (ended) return;
       const line = JSON.stringify(message) + "\n";
       if (queuedBytes + Buffer.byteLength(line) > MAX_BYTES * 2) {
-        stop(new ConnectorError("The MCP client is not reading replies."));
+        stop(new ConnectorError(UNREAD));
         return;
       }
       queued.push(line);
@@ -253,8 +255,14 @@ if (
           "\n",
       );
       process.exitCode = 1;
-      // Replies the client never read must not keep a failed connector alive.
-      setTimeout(() => process.exit(), 1000).unref();
+      // Unread replies must not keep a failed connector alive, but a reply
+      // the client is still reading gets time to finish.
+      setTimeout(
+        () => process.exit(),
+        error instanceof ConnectorError && error.message === UNREAD
+          ? 1000
+          : 10000,
+      ).unref();
     }
   } else {
     const { test } = await import("node:test");
@@ -714,6 +722,29 @@ if (
         f.result = {
           content: [{ type: "text", text: "x".repeat(6 * 1024 * 1024) }],
         };
+        const slow = start();
+        const before = await ready(slow);
+        const started = Date.now();
+        let received = 0;
+        // Read about 1 MB per second while the reply is written.
+        slow.child.stdout.on("data", (part) => {
+          received += part.length;
+          const ahead = received / 1000 - (Date.now() - started);
+          if (ahead <= 0) return;
+          slow.child.stdout.pause();
+          setTimeout(() => slow.child.stdout.resume(), ahead);
+        });
+        slow.child.stdin.write(call("slow", {}));
+        await settle(() => slow.stdout.length > before.length);
+        slow.child.stdin.write(Buffer.from([255, 10]));
+        assert.deepEqual(await exited(slow), { code: 1, signal: null });
+        assert.equal(slow.stderr, "The MCP client sent invalid UTF-8.\n");
+        assert.ok(slow.stdout.endsWith("\n"));
+        assert.equal(
+          JSON.parse(slow.stdout.slice(before.length)).result.content[0].text
+            .length,
+          6 * 1024 * 1024,
+        );
         const unread = start();
         await ready(unread);
         unread.child.stdout.removeAllListeners("data");
