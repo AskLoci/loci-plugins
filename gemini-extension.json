@@ -1,0 +1,12 @@
+{
+  "name": "loci",
+  "version": "0.1.10",
+  "description": "Run models on your Apple silicon Mac from Gemini CLI to summarize, rewrite, classify, and process batches with Loci.",
+  "mcpServers": {
+    "loci": {
+      "command": "node",
+      "args": ["${extensionPath}/loci-claude/connector/stdio.mjs"],
+      "timeout": 600000
+    }
+  }
+}

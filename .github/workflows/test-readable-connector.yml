@@ -3,6 +3,9 @@ on:
   pull_request:
     paths:
       [
+        "gemini-extension.json",
+        ".antigravity-plugin/**",
+        "mcp_config.json",
         "loci-claude/**",
         "loci-cursor/**",
         "loci/**",
@@ -15,6 +18,9 @@ on:
     branches: [main]
     paths:
       [
+        "gemini-extension.json",
+        ".antigravity-plugin/**",
+        "mcp_config.json",
         "loci-claude/**",
         "loci-cursor/**",
         "loci/**",
@@ -41,7 +47,7 @@ jobs:
           node-version: ${{ matrix.node }}
       - name: Test connector and operating-system boundaries
         run: node --test --test-concurrency=1 loci-claude/connector/*.mjs
-      - name: Verify Codex and Cursor package loading contracts
+      - name: Verify client package loading contracts
         run: node --test tests/codex-package.test.mjs
       - name: Verify direct entry point
         run: node loci-claude/connector/stdio.mjs --version

@@ -60,3 +60,39 @@ test("Cursor resolves the same signed runtime while package versions remain inde
     }
   }
 });
+
+test("Gemini resolves the bundled stdio connector without trusting tool calls automatically", async () => {
+  const extensionRoot = resolve(root, "..");
+  const manifest = await json("../gemini-extension.json");
+  assert.equal(manifest.name, "loci");
+  assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
+  const server = manifest.mcpServers.loci;
+  assert.equal(server.command, "node");
+  assert.equal(server.trust, undefined);
+  assert.deepEqual(server.args, ["${extensionPath}/loci-claude/connector/stdio.mjs"]);
+  const args = server.args.map((arg) => arg.replace("${extensionPath}", extensionRoot));
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const { stdout } = await run(server.command, [...args, "--version"], { env, timeout: 10000 });
+  const runtime = await json("../loci-claude/.claude-plugin/plugin.json");
+  assert.equal(stdout.trim(), runtime.version);
+});
+
+test("Antigravity installs the shared connector and can read its marketplace assets", async () => {
+  const pluginRoot = resolve(root, "..");
+  const manifest = await json("../.antigravity-plugin/plugin.json");
+  assert.equal(manifest.name, "loci");
+  assert.equal(manifest.displayName, "Loci");
+  assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
+  const logo = await realpath(resolve(pluginRoot, manifest.logo));
+  assert.ok(logo.startsWith(pluginRoot + sep));
+  assert.ok((await stat(logo)).isFile());
+  const server = (await json("../mcp_config.json")).mcpServers.loci;
+  assert.deepEqual(server, {
+    command: "node",
+    args: ["${PLUGIN_ROOT}/loci-claude/connector/stdio.mjs"],
+  });
+  const entry = server.args[0].replace("${PLUGIN_ROOT}", pluginRoot);
+  await access(entry, constants.R_OK);
+  await access(resolve(pluginRoot, ".antigravity-plugin/README.md"), constants.R_OK);
+});

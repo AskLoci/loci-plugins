@@ -1,0 +1,21 @@
+{
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
+  "name": "loci",
+  "displayName": "Loci",
+  "description": "Use models running on your Mac to summarize selected text, classify batches and generate structured answers alongside your coding assistant.",
+  "version": "0.1.10",
+  "logo": "loci-claude/assets/loci.png",
+  "author": {
+    "name": "Loci",
+    "url": "https://askloci.ai"
+  },
+  "suggestedPrompts": [
+    "Help me set up Loci on this Mac.",
+    "Which Loci models are ready on my Mac?",
+    "Use Loci to classify these messages by topic."
+  ],
+  "homepage": "https://askloci.ai/agents/",
+  "repository": "https://github.com/AskLoci/loci-plugins",
+  "license": "MIT",
+  "keywords": ["local-models", "mac", "apple-silicon", "mcp", "batch-processing"]
+}

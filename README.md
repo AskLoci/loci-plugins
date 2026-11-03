@@ -33,6 +33,20 @@ Start a new conversation and ask: “Help me set up Loci.” [Setup and data han
 
 Open **Customize → Plugins** and add `https://github.com/AskLoci/loci-plugins` as a repository source. Install **Loci**, start a new conversation, and ask: “Help me set up Loci.” [Setup and data handling](./loci-cursor/README.md).
 
+## Gemini CLI
+
+With [Node.js 22 or later](https://nodejs.org/) on your PATH, install the extension:
+
+```sh
+gemini extensions install https://github.com/AskLoci/loci-plugins --ref main
+```
+
+Start a new Gemini CLI session on your Mac and ask “Help me set up Loci.” Run `/mcp` to see which Loci tools are available. If you already configured a manual server named `loci`, Gemini uses it first. To switch to the extension, remove that entry with `gemini mcp remove loci --scope user` or `--scope project`, matching where you added it, then restart Gemini CLI.
+
+## Antigravity
+
+[Set up Loci in Antigravity](./.antigravity-plugin/README.md).
+
 ## Other MCP clients
 
 Use the Loci MCP bundle with a local macOS client that supports MCPB, or configure the signed connector as a local stdio server. No Node.js or Python runtime is required.
