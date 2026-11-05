@@ -1,8 +1,8 @@
 # Loci for agents
 
-Use models running on your Mac for summaries, rewriting, classification, structured output and batch processing. Compatible Loci app versions also provide file processing, document extraction, folder search and audio transcription.
+Use models running on your Mac for summaries, rewriting, classification, structured output and batch processing. Loci 0.1.28 and later also provide file processing, document extraction, folder search and audio transcription.
 
-Requires an Apple silicon Mac, macOS 26.2 or later, and the [Loci direct-download app](https://askloci.ai/api/mac-download). Available tools depend on your app version.
+Requires an Apple silicon Mac with 8 GB of memory or more, macOS 26.2 or later, and the [Loci direct-download app](https://askloci.ai/api/mac-download). Loci 0.1.28 or later provides every tool. Loci 0.1.21 to 0.1.27 provide model status, text generation, batch processing, model downloads and model loading only.
 
 ## Codex
 
@@ -63,6 +63,8 @@ If the saved connection is stale or refused, setup gives a connection-repair ste
 
 Model inference runs on your Mac. Prompts, paths and returned results shared in your assistant conversation follow that assistant’s data policies. File tools can read paths you authorize; summaries, extracted values, quotes and search passages can reveal information from those files.
 
-The connector reads Loci’s owner-only connection file and sends its credential only over loopback. It has no separate analytics or external reporting endpoint. Loci’s data practices are described in its privacy policy.
+The connector communicates only with Loci over local loopback and never needs you to paste its access token. For each request, it reads Loci’s owner-only connection file, or the file named by the `LOCI_AGENT_API_FILE` environment variable, and runs macOS `lsof` to confirm that the local port belongs to the Loci process named in that file and to your user account. Only then does it send the token. Each request’s User-Agent carries the name and version your assistant reports, followed by the connector version. The signed connector used by Codex and Cursor reduces that name and version to letters and digits. The connector has no analytics of its own.
+
+Loci’s diagnostic sharing is on by default. While it is on, Loci records one event for each call from your assistant: the tool, how the call ended, whether the caller identified itself as Claude Code or Codex, and the model engine used. Loci also records which tool made the first call a model answered on your Mac. Model work your assistant starts also produces Loci’s usual content-free performance diagnostics, such as which model ran and how long it took. These events contain no prompts, file paths, file contents or results. To stop sharing, turn off diagnostic sharing in Loci under Settings → Advanced → Privacy. Loci’s data practices are described in its [privacy policy](https://askloci.ai/privacy).
 
 [Support](https://askloci.ai/support) · [Privacy](https://askloci.ai/privacy) · [Terms](https://askloci.ai/terms)
