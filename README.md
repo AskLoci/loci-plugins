@@ -47,6 +47,17 @@ Start a new Gemini CLI session on your Mac and ask “Help me set up Loci.” Ru
 
 [Set up Loci in Antigravity](./.antigravity-plugin/README.md).
 
+## Hermes Agent
+
+Requires Hermes Agent 0.23.0 or later running on the same Mac as Loci.
+
+```sh
+hermes plugins install https://github.com/AskLoci/loci-plugins/tree/main/loci-hermes --no-enable
+hermes plugins enable loci
+```
+
+Ask “Help me set up Loci.” [Setup and data handling](./loci-hermes/README.md).
+
 ## Other MCP clients
 
 Use the Loci MCP bundle with a local macOS client that supports MCPB, or configure the signed connector as a local stdio server. No Node.js or Python runtime is required.

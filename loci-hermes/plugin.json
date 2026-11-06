@@ -1,0 +1,56 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "loci",
+  "version": "0.1.0",
+  "description": "Use models on your Mac alongside Hermes for selected-file summaries, document extraction, folder search, audio transcription and batch processing.",
+  "author": {
+    "name": "Loci",
+    "url": "https://askloci.ai"
+  },
+  "homepage": "https://askloci.ai/agents/",
+  "repository": "https://github.com/AskLoci/loci-plugins",
+  "license": "MIT",
+  "keywords": [
+    "local-models",
+    "mac",
+    "mcp",
+    "documents",
+    "batch-processing"
+  ],
+  "extensions": {
+    "com.nousresearch.hermes": {
+      "servers": {
+        "loci": {
+          "app": {
+            "darwin": {
+              "presence": "bundle",
+              "location": [
+                {
+                  "kind": "app_bundle",
+                  "name": "Loci.app"
+                }
+              ],
+              "version": {
+                "kind": "plist"
+              }
+            }
+          },
+          "requires": {
+            "app": false
+          },
+          "liveness": {
+            "kind": "server_json",
+            "path": "~/Library/Application Support/LociRust/agent-api.json",
+            "fields": {
+              "url": "mcp_url",
+              "token": "token",
+              "pid": "pid"
+            }
+          },
+          "trust": "untrusted",
+          "timeout": 600
+        }
+      }
+    }
+  }
+}
