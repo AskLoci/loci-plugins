@@ -20,11 +20,17 @@ hermes plugins enable loci
 ## Set up
 
 1. Install and enable this plugin in Hermes. You can do this before installing Loci.
-2. Ask Hermes: “Help me set up Loci.” If needed, [download Loci for Mac](https://askloci.ai/api/mac-download), open the disk image, and run **Install Loci**.
+2. Ask Hermes: “Help me set up Loci.” If needed, [download Loci for Mac](https://askloci.ai/download/mac/0.1.33/0.1.33/Loci-48038e3963f894b295bf4e449879fc30790826732bf74d9e6fc7324aaadc90ec.dmg/Loci.dmg), open the disk image, and run **Install Loci**.
 3. Open Loci, complete its setup, and enable **Settings → Advanced → Agent Access**. Keep Loci running in the background.
 4. Run `/reload-mcp` or start a new Hermes conversation. Ask “Check my Loci models and give me one short local answer.” Reuse an installed model, or approve a compatible model download after reviewing its size.
 
 No credential copying or separate connector runtime is needed. Hermes uses its built-in local application discovery and HTTP MCP connection. Its normal approval controls apply to write-capable tools, including downloads, file output and persistent indexing. Background tasks that require approval fail instead of waiting indefinitely.
+
+The linked installer is Loci 0.1.33 (61,905,465 bytes). Verify its SHA-256 before opening:
+
+```text
+48038e3963f894b295bf4e449879fc30790826732bf74d9e6fc7324aaadc90ec
+```
 
 ## Try it
 

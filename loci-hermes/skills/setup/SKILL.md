@@ -15,10 +15,11 @@ If Loci tools are missing, check whether the plugin is enabled and whether the d
 
 When the app is absent:
 
-1. Offer [Download Loci for Mac](https://askloci.ai/api/mac-download). Use available tools to help with authorized installation.
-2. Open the disk image and run **Install Loci**. Complete first-time setup in the installed app.
-3. Enable **Settings → Advanced → Agent Access**, then keep Loci running in the background.
-4. Run `/reload-mcp` or start a new Hermes session to connect and discover its tools; call `loci_status`.
+1. Offer [Download Loci for Mac](https://askloci.ai/download/mac/0.1.33/0.1.33/Loci-48038e3963f894b295bf4e449879fc30790826732bf74d9e6fc7324aaadc90ec.dmg/Loci.dmg). Use available tools to help with authorized installation.
+2. Before opening the downloaded image, verify its SHA-256 is `48038e3963f894b295bf4e449879fc30790826732bf74d9e6fc7324aaadc90ec` and its size is 61,905,465 bytes. This pins the official Loci 0.1.33 installer. Stop on a mismatch; do not substitute another download or bypass verification.
+3. Open the verified disk image and run **Install Loci**. Complete first-time setup in the installed app.
+4. Enable **Settings → Advanced → Agent Access**, then keep Loci running in the background.
+5. Run `/reload-mcp` or start a new Hermes session to connect and discover its tools; call `loci_status`.
 
 Use the direct-download app, because the Mac App Store version does not expose Agent Access. Do not replace an existing installation, download a model or alter another session without authorization. Do not bypass macOS security warnings. No manual credential copying or extra Node.js runtime is needed.
 
