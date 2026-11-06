@@ -1,0 +1,21 @@
+name: Validate Hermes package
+on:
+  pull_request:
+    paths: ["loci-hermes/**", ".github/workflows/test-hermes.yml"]
+  push:
+    branches: [main]
+    paths: ["loci-hermes/**", ".github/workflows/test-hermes.yml"]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: NousResearch/hermes-agent/.github/actions/plugin-validate@2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19 # v0.23.0
+        with:
+          path: loci-hermes
+          hermes-ref: 2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19
