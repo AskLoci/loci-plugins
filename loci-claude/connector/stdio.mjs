@@ -10,6 +10,8 @@ import {
   hasModelTools,
 } from "./protocol.mjs";
 
+const UNREAD = "The MCP client is not reading replies.";
+
 export async function serve(input, output, options = {}) {
   let queued = [],
     queuedBytes = 0,
@@ -29,7 +31,7 @@ export async function serve(input, output, options = {}) {
       if (ended) return;
       const line = JSON.stringify(message) + "\n";
       if (queuedBytes + Buffer.byteLength(line) > MAX_BYTES * 2) {
-        stop(new ConnectorError("The MCP client is not reading replies."));
+        stop(new ConnectorError(UNREAD));
         return;
       }
       queued.push(line);
@@ -234,6 +236,7 @@ async function main(args, nodeVersion = process.versions.node) {
   } finally {
     process.off("SIGTERM", stop);
     process.off("SIGINT", stop);
+    process.stdin.destroy();
   }
 }
 
@@ -252,6 +255,14 @@ if (
           "\n",
       );
       process.exitCode = 1;
+      // Unread replies must not keep a failed connector alive, but a reply
+      // the client is still reading gets time to finish.
+      setTimeout(
+        () => process.exit(),
+        error instanceof ConnectorError && error.message === UNREAD
+          ? 1000
+          : 10000,
+      ).unref();
     }
   } else {
     const { test } = await import("node:test");
@@ -260,9 +271,8 @@ if (
     const { spawn } = await import("node:child_process");
     const { fixture, waitUntil } = await import("./testing.mjs");
     test("manifest launches bundled JavaScript directly from a path with spaces", async () => {
-      const { mkdtemp, cp, readFile, mkdir, symlink, rm } = await import(
-        "node:fs/promises"
-      );
+      const { mkdtemp, cp, readFile, readdir, mkdir, symlink, rm } =
+        await import("node:fs/promises");
       const { tmpdir } = await import("node:os");
       const { join, dirname } = await import("node:path");
       const { execFile } = await import("node:child_process");
@@ -327,6 +337,58 @@ if (
           assert.match(guidance, /ENOENT/);
           assert.match(guidance, /node --version/);
           assert.match(guidance, /PATH/);
+        }
+        assert.match(
+          await readFile(join(root, "skills/loci/SKILL.md"), "utf8"),
+          /If no Loci tools are available/,
+        );
+        const commands = [];
+        for (const path of await readdir(join(root, "skills"), {
+          recursive: true,
+        })) {
+          if (!path.endsWith("SKILL.md")) continue;
+          const text = await readFile(join(root, "skills", path), "utf8");
+          const found = [
+            ...text.matchAll(/\bnode\s+("[^"]*"|\S+)[^`\n]*/g),
+          ].filter(([, file]) => file.includes("stdio.mjs"));
+          assert.equal(found.length, text.split("stdio.mjs").length - 1, path);
+          for (const [command, file] of found) {
+            assert.equal(file, '"${CLAUDE_PLUGIN_ROOT}/connector/stdio.mjs"');
+            commands.push(command);
+          }
+        }
+        assert.deepEqual(
+          commands.map((command) => command.split(" ").at(-1)).sort(),
+          ["--check", "--version"],
+        );
+        const { UNAVAILABLE } = await import("./protocol.mjs");
+        for (const command of commands) {
+          const result = await run(
+            "/bin/sh",
+            ["-c", command.replaceAll("${CLAUDE_PLUGIN_ROOT}", root)],
+            {
+              cwd: directory,
+              env: {
+                ...env,
+                PATH: bin,
+                LOCI_AGENT_API_FILE: join(directory, "missing.json"),
+              },
+              timeout: 10000,
+            },
+          ).then(
+            (output) => ({ code: 0, ...output }),
+            (error) => error,
+          );
+          if (command.endsWith("--version"))
+            assert.deepEqual(
+              [result.code, result.stdout, result.stderr],
+              [0, VERSION + "\n", ""],
+            );
+          else
+            assert.deepEqual(
+              [result.code, result.stdout, result.stderr],
+              [1, "", UNAVAILABLE + "\n"],
+            );
         }
       } finally {
         await rm(directory, { recursive: true, force: true });
@@ -581,6 +643,133 @@ if (
         await f.write();
         assert.equal((await run(["--check"])).code, 0);
       } finally {
+        await f.close();
+      }
+    });
+    test("real CLI exits after fatal stream errors and signals while stdin stays open", async () => {
+      const f = await fixture();
+      await f.write();
+      const children = [];
+      const settle = async (predicate) => {
+        const until = Date.now() + 20000;
+        while (!predicate()) {
+          if (Date.now() > until) throw new Error("CLI did not respond");
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+      };
+      const start = () => {
+        const env = { ...process.env, LOCI_AGENT_API_FILE: f.path };
+        delete env.NODE_TEST_CONTEXT;
+        const child = spawn(
+          process.execPath,
+          [fileURLToPath(import.meta.url)],
+          { env, stdio: ["pipe", "pipe", "pipe"] },
+        );
+        children.push(child);
+        const cli = { child, stdout: "", stderr: "" };
+        child.stdin.on("error", () => {});
+        child.stdout.on("data", (part) => {
+          cli.stdout += part;
+        });
+        child.stderr.on("data", (part) => {
+          cli.stderr += part;
+        });
+        cli.exit = new Promise((resolve) =>
+          child.once("exit", (code, signal) => resolve({ code, signal })),
+        );
+        cli.closed = new Promise((resolve) => child.once("close", resolve));
+        return cli;
+      };
+      const ready = async (cli) => {
+        cli.child.stdin.write("ready\n");
+        await settle(() => cli.stdout.includes("-32700"));
+        return cli.stdout;
+      };
+      const exited = async (cli) => {
+        let timer;
+        const status = await Promise.race([
+          cli.exit,
+          new Promise((resolve, reject) => {
+            timer = setTimeout(
+              () => reject(new Error("CLI kept running")),
+              10000,
+            );
+          }),
+        ]).finally(() => clearTimeout(timer));
+        cli.child.stdout.resume();
+        await cli.closed;
+        return status;
+      };
+      const call = (id, args) =>
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id,
+          method: "tools/call",
+          params: { name: "loci_generate", arguments: args },
+        }) + "\n";
+      try {
+        for (const [input, message] of [
+          [Buffer.from([255, 10]), "The MCP client sent invalid UTF-8."],
+          [Buffer.alloc(MAX_BYTES + 1, 120), "The MCP request is too large."],
+        ]) {
+          const cli = start();
+          const replies = await ready(cli);
+          cli.child.stdin.write(input);
+          assert.deepEqual(await exited(cli), { code: 1, signal: null });
+          assert.equal(cli.stderr, message + "\n");
+          assert.equal(cli.stdout, replies);
+        }
+        f.result = {
+          content: [{ type: "text", text: "x".repeat(6 * 1024 * 1024) }],
+        };
+        const slow = start();
+        const before = await ready(slow);
+        const started = Date.now();
+        let received = 0;
+        // Read about 1 MB per second while the reply is written.
+        slow.child.stdout.on("data", (part) => {
+          received += part.length;
+          const ahead = received / 1000 - (Date.now() - started);
+          if (ahead <= 0) return;
+          slow.child.stdout.pause();
+          setTimeout(() => slow.child.stdout.resume(), ahead);
+        });
+        slow.child.stdin.write(call("slow", {}));
+        await settle(() => slow.stdout.length > before.length);
+        slow.child.stdin.write(Buffer.from([255, 10]));
+        assert.deepEqual(await exited(slow), { code: 1, signal: null });
+        assert.equal(slow.stderr, "The MCP client sent invalid UTF-8.\n");
+        assert.ok(slow.stdout.endsWith("\n"));
+        assert.equal(
+          JSON.parse(slow.stdout.slice(before.length)).result.content[0].text
+            .length,
+          6 * 1024 * 1024,
+        );
+        const unread = start();
+        await ready(unread);
+        unread.child.stdout.removeAllListeners("data");
+        unread.child.stdout.pause();
+        for (let id = 1; id <= 4; id++) unread.child.stdin.write(call(id, {}));
+        assert.deepEqual(await exited(unread), { code: 1, signal: null });
+        assert.equal(unread.stderr, "The MCP client is not reading replies.\n");
+        delete f.result;
+        for (const ending of ["SIGINT", "SIGTERM", "EOF"]) {
+          const cli = start();
+          const before = f.requests.length;
+          cli.child.stdin.write(call(ending, { mode: "hang" }));
+          await settle(() => f.requests.length === before + 1);
+          if (ending === "EOF") cli.child.stdin.end();
+          else cli.child.kill(ending);
+          assert.deepEqual(await exited(cli), { code: 0, signal: null });
+          await settle(() => f.closed.includes(ending));
+          assert.equal(f.requests.length, before + 1);
+          assert.equal(cli.stdout, "");
+          assert.equal(cli.stderr, "");
+        }
+      } finally {
+        for (const child of children)
+          if (child.exitCode === null && child.signalCode === null)
+            child.kill("SIGKILL");
         await f.close();
       }
     });

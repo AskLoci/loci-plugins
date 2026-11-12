@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 // Public MCP contract: retain app schemas/results and add setup discovery only.
-export const VERSION = "0.1.10";
+export const VERSION = "0.1.11";
 export const MAX_BYTES = 8 * 1024 * 1024;
 export const META_VERSION = "io.modelcontextprotocol/protocolVersion";
 export const META_CLIENT = "io.modelcontextprotocol/clientInfo";
@@ -97,6 +97,7 @@ export function protocolError(request) {
 export function setupTool() {
   return {
     name: "loci_setup",
+    title: "Set up Loci",
     description:
       "Get the official Loci Mac download link and check the connection. Works before Loci is installed. Does not install software, change settings, or download models. Run again after opening Loci and enabling Agent Access.",
     inputSchema: {

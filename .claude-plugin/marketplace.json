@@ -3,12 +3,15 @@
   "owner": {
     "name": "Loci"
   },
+  "metadata": {
+    "description": "Loci's plugins for using models that run on your Mac"
+  },
   "plugins": [
     {
       "name": "loci",
       "source": "./loci-claude",
       "description": "Local models alongside Claude Code",
-      "version": "0.1.10"
+      "version": "0.1.11"
     }
   ]
 }
