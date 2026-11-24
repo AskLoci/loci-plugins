@@ -14,7 +14,7 @@ codex plugin marketplace add AskLoci/loci-plugins
 
 In the desktop app, open the Plugins Directory, select **Loci**, and install the **Loci** plugin. If the marketplace does not appear, restart the desktop app. Start a new chat and ask: “Help me set up Loci.”
 
-[Download the Codex plugin (0.1.12)](https://github.com/AskLoci/loci-plugins/releases/download/v0.1.12/loci-0.1.12-macos-arm64.zip).
+[Download the Codex plugin (0.1.13)](https://github.com/AskLoci/loci-plugins/releases/download/v0.1.13/loci-0.1.13-macos-arm64.zip).
 
 ## Claude Code
 
@@ -33,7 +33,7 @@ Start a new conversation and ask: “Help me set up Loci.” [Setup and data han
 
 Open **Customize → Plugins** and add `https://github.com/AskLoci/loci-plugins` as a repository source. Install **Loci**, start a new conversation, and ask: “Help me set up Loci.” [Setup and data handling](./loci-cursor/README.md).
 
-[Download the Cursor plugin (0.1.12)](https://github.com/AskLoci/loci-plugins/releases/download/v0.1.12/loci-cursor-0.1.12-macos-arm64.zip).
+[Download the Cursor plugin (0.1.13)](https://github.com/AskLoci/loci-plugins/releases/download/v0.1.13/loci-cursor-0.1.13-macos-arm64.zip).
 
 ## Gemini CLI
 

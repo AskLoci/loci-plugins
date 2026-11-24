@@ -8,7 +8,7 @@
     "url": "https://github.com/AskLoci/loci-plugins",
     "source": "github"
   },
-  "version": "0.1.7",
+  "version": "0.1.13",
   "icons": [
     {
       "src": "https://raw.githubusercontent.com/AskLoci/loci-plugins/main/loci/assets/loci.png",
@@ -21,8 +21,8 @@
   "packages": [
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/AskLoci/loci-plugins/releases/download/v0.1.7/loci-0.1.7-macos-arm64.mcpb",
-      "fileSha256": "071345e6f8bb4df18b37fa274df5ed8f4951bea45fc12dcdf386bd242fae0957",
+      "identifier": "https://github.com/AskLoci/loci-plugins/releases/download/v0.1.13/loci-0.1.13-macos-arm64.mcpb",
+      "fileSha256": "90c0e03a919fe5d47f2af333929d581b728feea69e93d98be500da0564992de6",
       "transport": {
         "type": "stdio"
       }
