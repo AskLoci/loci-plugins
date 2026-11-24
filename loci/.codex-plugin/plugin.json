@@ -1,6 +1,6 @@
 {
   "name": "loci",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Use local models alongside Codex for file summaries, document extraction, search, transcription, and batch processing.",
   "author": {
     "name": "Loci",
