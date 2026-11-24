@@ -1,6 +1,6 @@
 {
   "name": "loci",
-  "version": "0.1.10",
+  "version": "0.1.13",
   "description": "Run models on your Apple silicon Mac from Gemini CLI to summarize, rewrite, classify, and process batches with Loci.",
   "mcpServers": {
     "loci": {

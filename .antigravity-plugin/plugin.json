@@ -3,7 +3,7 @@
   "name": "loci",
   "displayName": "Loci",
   "description": "Use models running on your Mac to summarize selected text, classify batches and generate structured answers alongside your coding assistant.",
-  "version": "0.1.10",
+  "version": "0.1.13",
   "logo": "loci-claude/assets/loci.png",
   "author": {
     "name": "Loci",
